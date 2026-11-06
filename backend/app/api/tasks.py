@@ -1,5 +1,6 @@
 import asyncio
 import json
+from functools import lru_cache
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -7,15 +8,30 @@ from fastapi.responses import StreamingResponse
 from app.agent.loop import run_agent
 from app.core.config import Settings, get_settings
 from app.core.llm.deepseek import DeepSeekProvider
+from app.rag.embedding import FastEmbedEmbedder
+from app.rag.store import VectorStore
 from app.schemas.research import ResearchRequest
+from app.tools.fetch import FetchTool
 from app.tools.search import SearchTool
+from app.tools.vector_search import VectorSearchTool
 
 router = APIRouter()
 
 
 def _sse(event: str, data: dict) -> str:
-    """把一条事件编码成 SSE 帧。"""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@lru_cache
+def get_embedder() -> FastEmbedEmbedder:
+    s = get_settings()
+    return FastEmbedEmbedder(s.embedding_model, s.embedding_dim)
+
+
+@lru_cache
+def get_store() -> VectorStore:
+    s = get_settings()
+    return VectorStore(s.db_url, s.embedding_dim)
 
 
 @router.post("/research")
@@ -25,7 +41,13 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
         base_url=settings.deepseek_base_url,
         model=settings.deepseek_model,
     )
-    tools = [SearchTool(api_key=settings.tavily_api_key)]
+    store = get_store()
+    embedder = get_embedder()
+    tools = [
+        SearchTool(api_key=settings.tavily_api_key),
+        FetchTool(store=store, embedder=embedder),
+        VectorSearchTool(store=store, embedder=embedder),
+    ]
 
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -40,6 +62,7 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
             if not settings.tavily_api_key:
                 await emit("error", {"message": "TAVILY_API_KEY 未配置，请在 backend/.env 中填写"})
                 return
+            await asyncio.to_thread(store.init_schema)
             await emit("task_start", {"question": req.question})
             response = await run_agent(
                 provider=provider,
@@ -50,10 +73,10 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
             )
             await emit("answer", {"content": response.content})
             await emit("task_end", {})
-        except Exception as e:  # 任何异常都推给前端，不让流挂死
+        except Exception as e:
             await emit("error", {"message": str(e)})
         finally:
-            await queue.put(None)  # 结束哨兵
+            await queue.put(None)
 
     async def event_stream():
         task = asyncio.create_task(run())

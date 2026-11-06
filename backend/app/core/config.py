@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     # Tavily
     tavily_api_key: str = ""
 
+    # PostgreSQL (pgvector)
+    db_url: str = "postgresql://deepsearch:deepsearch@localhost:5432/deepsearch"
+
+    # Embedding（本地 BGE）
+    embedding_model: str = "BAAI/bge-small-zh-v1.5"
+    embedding_dim: int = 512
+    hf_endpoint: str = ""  # 国内下载模型慢时，设为 https://hf-mirror.com
+
     # Agent
     max_agent_steps: int = 8
 

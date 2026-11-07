@@ -62,6 +62,22 @@ class VectorStore:
             conn.commit()
         return row[0]
 
+    def _assign_citation(self, conn, task_id: int, source_id: int) -> int:
+        """把来源关联到任务并分配任务内引用号（已存在则复用）。"""
+        conn.execute(
+            """
+            INSERT INTO task_source (task_id, source_id, citation_no)
+            SELECT %s, %s, COALESCE(MAX(citation_no), 0) + 1
+            FROM task_source WHERE task_id = %s
+            ON CONFLICT (task_id, source_id) DO NOTHING
+            """,
+            (task_id, source_id, task_id),
+        )
+        return conn.execute(
+            "SELECT citation_no FROM task_source WHERE task_id = %s AND source_id = %s",
+            (task_id, source_id),
+        ).fetchone()[0]
+
     def add_source(
         self,
         task_id: int,
@@ -70,12 +86,7 @@ class VectorStore:
         chunks: list[str],
         embeddings: list[list[float]],
     ) -> int:
-        """把一个来源入库到指定任务，返回任务内引用编号 citation_no。
-
-        - 来源全局去重：同 url 复用同一个 source
-        - chunk 幂等：同 source 重复入库时先删旧 chunk 再插入
-        - 任务内编号：同任务内从 1 起，同 url 已存在则复用编号
-        """
+        """抓取后入库一个来源：来源全局去重、chunk 幂等重写、关联到任务。返回任务内引用号。"""
         with self._connect() as conn:
             source_id = conn.execute(
                 "INSERT INTO source (url, title) VALUES (%s, %s) "
@@ -90,20 +101,22 @@ class VectorStore:
                     (source_id, chunk, _vec_str(emb)),
                 )
 
-            conn.execute(
-                """
-                INSERT INTO task_source (task_id, source_id, citation_no)
-                SELECT %s, %s, COALESCE(MAX(citation_no), 0) + 1
-                FROM task_source WHERE task_id = %s
-                ON CONFLICT (task_id, source_id) DO NOTHING
-                """,
-                (task_id, source_id, task_id),
-            )
-            citation_no = conn.execute(
-                "SELECT citation_no FROM task_source WHERE task_id = %s AND source_id = %s",
-                (task_id, source_id),
-            ).fetchone()[0]
+            citation_no = self._assign_citation(conn, task_id, source_id)
+            conn.commit()
+        return citation_no
 
+    def get_source(self, url: str) -> dict | None:
+        """按 url 查来源（抓取缓存用）。返回 {'id', 'title'} 或 None。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, title FROM source WHERE url = %s", (url,)
+            ).fetchone()
+        return {"id": row[0], "title": row[1]} if row else None
+
+    def link_source(self, task_id: int, source_id: int) -> int:
+        """把已存在的来源关联到当前任务（复用已有 chunk，不重新抓取）。返回任务内引用号。"""
+        with self._connect() as conn:
+            citation_no = self._assign_citation(conn, task_id, source_id)
             conn.commit()
         return citation_no
 

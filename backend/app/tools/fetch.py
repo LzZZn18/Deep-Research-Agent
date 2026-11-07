@@ -4,6 +4,7 @@ import re
 import httpx
 import trafilatura
 
+from app.core.security import check_public_url
 from app.rag.chunker import chunk_text
 from app.rag.embedding import Embedder
 from app.rag.store import VectorStore
@@ -30,6 +31,24 @@ class FetchTool(Tool):
         self.task_id = task_id
 
     async def run(self, url: str) -> str:
+        # 1. 抓取缓存：已入库的来源直接复用，跳过抓取+向量化
+        cached = await asyncio.to_thread(self.store.get_source, url)
+        if cached is not None:
+            citation_id = await asyncio.to_thread(
+                self.store.link_source, self.task_id, cached["id"]
+            )
+            return (
+                f"已缓存（复用之前抓取的内容），引用编号 [{citation_id}]\n"
+                f"标题：{cached['title'] or url}\n"
+                f"URL：{url}"
+            )
+
+        # 2. 防 SSRF：只允许公网 http/https
+        blocked = await asyncio.to_thread(check_public_url, url)
+        if blocked is not None:
+            return f"拒绝抓取：{blocked}"
+
+        # 3. 抓取 + 提取 + 切块 + 向量化 + 入库
         async with httpx.AsyncClient(
             timeout=30,
             follow_redirects=True,
@@ -39,7 +58,6 @@ class FetchTool(Tool):
             resp.raise_for_status()
             html = resp.text
 
-        # trafilatura 是 CPU 密集的同步调用，丢到线程池避免阻塞事件循环
         text = (await asyncio.to_thread(trafilatura.extract, html, url=url) or "").strip()
         if not text:
             return f"无法从 {url} 提取正文内容。"

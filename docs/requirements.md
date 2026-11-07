@@ -184,15 +184,43 @@
 - **MVP**：FastAPI 原生 async + BackgroundTasks，够跑单机 demo。
 - **进阶**：Redis + ARQ（或 Celery），支持真正并发的多任务、断点恢复。
 
+#### ⑦ RAG 知识组织：任务隔离 vs 全局知识池 vs 分层
+
+三种方案对比：
+
+| 方案 | 串题风险 | 跨任务复用 | 可清理/统计 | 复杂度 | 大数据量表现 |
+|---|---|---|---|---|---|
+| A 全局知识池 | 高 | 强 | 差 | 低 | 检索随总量退化、无法清理 |
+| B 纯任务隔离 | 无 | 无 | 好 | 低 | 稳定，但重复提问零复用、最费时 |
+| C 隔离 + 长期库 | 低 | 有（受控） | 好 | 中 | 可持续：范围小、长期库可限流淘汰 |
+
+**选 C。** 核心设计：
+
+- **任务库**：每次研究一个 `research_task`，抓取来源通过关联表限定「本任务检索范围」；引用编号用任务内局部编号（每份报告从 `[1]` 开始）。
+- **长期库**：来源满足打分阈值后晋升，可设上限与淘汰，支持跨任务复用。
+- **检索**：默认只搜本任务，命中不足时回退长期库（双阶段）。
+
+**数据晋升到长期库的判定**（打分制）：
+
+```
+晋升分 = 复用次数×2 + 被引用进报告×1 + 权威域名(+2)/低质域名(−2) + 正文质量(+1) − 易过期内容(−3)
+晋升分 ≥ 阈值 → 晋升长期库（带 last_referenced_at / expires_at，用于淘汰）
+```
+
+**耗时与规模**：三方案在「向量检索本身」上几乎无差别（HNSW 毫秒级）；真正耗时大头是抓取 + LLM 调用。C 通过「复用 + 不串题」在重复提问和大数据量下最优。实现上避免「一张大表 + WHERE 过滤」的 filtered-HNSW 性能退化，把任务库与长期库物理分层（进阶可迁 Qdrant）。
+
 ---
 
 ## 5. 数据模型（草案）
 
 | 表/集合 | 字段 | 说明 |
 |---|---|---|
-| `research_task` | id, query, status, created_at, updated_at | 顶层任务 |
+| `research_task` | id, question, status, created_at, updated_at | 顶层任务 |
 | `subtask` | id, task_id, question, status | Planner 拆解的子问题 |
-| `source_document` | id, task_id, url, title, content, chunk, embedding | 抓取内容 + 向量 |
+| `source` | id, url(唯一), title | 来源（全局去重，只存一份） |
+| `chunk` | id, source_id, chunk, embedding | 分块 + 向量（归 source，不重复） |
+| `task_source` | task_id, source_id, citation_no | 本任务引用编号（任务内从 1 起） |
+| `source_pool` | source_id, is_long_term, quality_score, last_referenced_at, expires_at | 长期库（晋升/淘汰） |
 | `report` | id, task_id, markdown, citations | 最终报告 |
 | `trace_event` | id, task_id, step, tool, input, output, tokens, cost, duration_ms | 可观测性 |
 

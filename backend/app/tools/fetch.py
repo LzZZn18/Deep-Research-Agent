@@ -24,9 +24,10 @@ class FetchTool(Tool):
         "required": ["url"],
     }
 
-    def __init__(self, store: VectorStore, embedder: Embedder):
+    def __init__(self, store: VectorStore, embedder: Embedder, task_id: int):
         self.store = store
         self.embedder = embedder
+        self.task_id = task_id
 
     async def run(self, url: str) -> str:
         async with httpx.AsyncClient(
@@ -46,7 +47,9 @@ class FetchTool(Tool):
         title = await asyncio.to_thread(self._extract_title, html) or url
         chunks = chunk_text(text)
         embeddings = await asyncio.to_thread(self.embedder.embed, chunks)
-        citation_id = await asyncio.to_thread(self.store.add_source, url, title, chunks, embeddings)
+        citation_id = await asyncio.to_thread(
+            self.store.add_source, self.task_id, url, title, chunks, embeddings
+        )
 
         return (
             f"已入库，引用编号 [{citation_id}]（共 {len(chunks)} 个片段）\n"

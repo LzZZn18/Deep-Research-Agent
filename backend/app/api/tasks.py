@@ -43,11 +43,6 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
     )
     store = get_store()
     embedder = get_embedder()
-    tools = [
-        SearchTool(api_key=settings.tavily_api_key),
-        FetchTool(store=store, embedder=embedder),
-        VectorSearchTool(store=store, embedder=embedder),
-    ]
 
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -55,6 +50,7 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
         await queue.put((event, data))
 
     async def run() -> None:
+        task_id = None
         try:
             if not settings.deepseek_api_key:
                 await emit("error", {"message": "DEEPSEEK_API_KEY 未配置，请在 backend/.env 中填写"})
@@ -63,7 +59,13 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
                 await emit("error", {"message": "TAVILY_API_KEY 未配置，请在 backend/.env 中填写"})
                 return
             await asyncio.to_thread(store.init_schema)
-            await emit("task_start", {"question": req.question})
+            task_id = await asyncio.to_thread(store.create_task, req.question)
+            tools = [
+                SearchTool(api_key=settings.tavily_api_key),
+                FetchTool(store=store, embedder=embedder, task_id=task_id),
+                VectorSearchTool(store=store, embedder=embedder, task_id=task_id),
+            ]
+            await emit("task_start", {"question": req.question, "task_id": task_id})
             response = await run_agent(
                 provider=provider,
                 tools=tools,
@@ -71,9 +73,15 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
                 max_steps=settings.max_agent_steps,
                 emit=emit,
             )
+            await asyncio.to_thread(store.finish_task, task_id, "done")
             await emit("answer", {"content": response.content})
             await emit("task_end", {})
         except Exception as e:
+            if task_id is not None:
+                try:
+                    await asyncio.to_thread(store.finish_task, task_id, "failed")
+                except Exception:
+                    pass
             await emit("error", {"message": str(e)})
         finally:
             await queue.put(None)

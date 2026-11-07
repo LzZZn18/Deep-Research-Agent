@@ -19,13 +19,14 @@ class VectorSearchTool(Tool):
         "required": ["query"],
     }
 
-    def __init__(self, store: VectorStore, embedder: Embedder):
+    def __init__(self, store: VectorStore, embedder: Embedder, task_id: int):
         self.store = store
         self.embedder = embedder
+        self.task_id = task_id
 
     async def run(self, query: str) -> str:
         emb = await asyncio.to_thread(self.embedder.embed, [query])
-        results = await asyncio.to_thread(self.store.search, emb[0], 5)
+        results = await asyncio.to_thread(self.store.search, self.task_id, emb[0], 5)
         if not results:
             return "没有找到相关资料（可能尚未抓取任何来源，请先用 search + fetch 收集资料）。"
         lines = []

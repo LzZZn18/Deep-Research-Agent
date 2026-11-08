@@ -502,3 +502,144 @@ textarea:focus {
 .btn-export:hover {
   background: var(--blue-soft);
 }
+
+/* 布局：侧边栏 + 主区 */
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+.sidebar {
+  width: 264px;
+  flex: none;
+  background: #fff;
+  border-right: 1px solid var(--border);
+  padding: 20px 14px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.main {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-logo {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #111827;
+  padding: 0 8px 16px;
+}
+.btn-new {
+  background: var(--blue);
+  color: #fff;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 18px;
+  transition: background 0.15s;
+}
+.btn-new:hover {
+  background: var(--blue-dark);
+}
+.sidebar-title {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 0 8px 8px;
+  letter-spacing: 0.04em;
+}
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.history-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 8px;
+}
+.history-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.history-item:hover {
+  background: #f1f5f9;
+}
+.history-item.active {
+  background: var(--blue-soft);
+}
+.history-q {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: #1f2328;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.history-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.history-meta .dot {
+  width: 7px;
+  height: 7px;
+}
+.dot.failed {
+  background: var(--red);
+}
+.dot.cancelled {
+  background: #9ca3af;
+}
+
+/* 历史详情 */
+.history-head {
+  margin-bottom: 20px;
+}
+.history-head h1 {
+  font-size: 22px;
+  line-height: 1.4;
+  margin: 12px 0 6px;
+  color: #111827;
+}
+.back-link {
+  background: none;
+  border: none;
+  color: var(--blue);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+}
+.back-link:hover {
+  text-decoration: underline;
+}
+
+/* 引用来源 */
+.sources-list {
+  margin: 0;
+  padding-left: 22px;
+  line-height: 1.9;
+}
+.sources-list li {
+  margin-bottom: 2px;
+}
+.sources-list a {
+  color: var(--blue);
+  text-decoration: none;
+  word-break: break-all;
+}
+.sources-list a:hover {
+  text-decoration: underline;
+}

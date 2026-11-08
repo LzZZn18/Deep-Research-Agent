@@ -101,6 +101,8 @@ class VectorStore:
                     ON source_pool (is_long_term) WHERE is_long_term;
                 """
             )
+            # 历史记录：保存最终报告（已存在的库用 IF NOT EXISTS 平滑加列）
+            conn.execute("ALTER TABLE research_task ADD COLUMN IF NOT EXISTS report TEXT")
             conn.commit()
 
     def create_task(self, question: str) -> int:
@@ -318,6 +320,60 @@ class VectorStore:
                 (status, task_id),
             )
             conn.commit()
+
+    def save_report(self, task_id: int, report: str) -> None:
+        """保存最终报告内容。"""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE research_task SET report = %s, updated_at = now() WHERE id = %s",
+                (report, task_id),
+            )
+            conn.commit()
+
+    def list_tasks(self, limit: int = 50) -> list[dict]:
+        """按时间倒序列出任务（仅元信息，不含报告正文）。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, question, status, created_at
+                FROM research_task
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {"id": r[0], "question": r[1], "status": r[2], "created_at": r[3].isoformat()}
+            for r in rows
+        ]
+
+    def get_task(self, task_id: int) -> dict | None:
+        """返回单个任务详情（问题、状态、报告、引用来源）。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, question, status, report, created_at FROM research_task WHERE id = %s",
+                (task_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            sources = conn.execute(
+                """
+                SELECT ts.citation_no, s.title, s.url
+                FROM task_source ts
+                JOIN source s ON s.id = ts.source_id
+                WHERE ts.task_id = %s
+                ORDER BY ts.citation_no
+                """,
+                (task_id,),
+            ).fetchall()
+        return {
+            "id": row[0],
+            "question": row[1],
+            "status": row[2],
+            "report": row[3],
+            "created_at": row[4].isoformat(),
+            "sources": [{"citation_id": r[0], "title": r[1], "url": r[2]} for r in sources],
+        }
 
 
 def _vec_str(v: list[float]) -> str:

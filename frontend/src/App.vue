@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { startResearch } from './lib/sse.js';
 import { exportWord, exportPdf } from './lib/export.js';
 import MarkdownView from './components/MarkdownView.vue';
@@ -17,6 +17,10 @@ const reportEl = ref(null);
 const toolLogs = ref([]);
 const showTools = ref(false);
 
+const view = ref('new');
+const tasks = ref([]);
+const currentTask = ref(null);
+
 const stages = ref([
   { key: 'planning', label: '规划', status: 'pending' },
   { key: 'researching', label: '研究', status: 'pending' },
@@ -29,6 +33,10 @@ const elapsed = ref(0);
 let timerId = null;
 let controller = null;
 let cancelled = false;
+
+const activeReport = computed(() =>
+  view.value === 'history' ? currentTask.value?.report || '' : report.value
+);
 
 function setStage(key, status) {
   const s = stages.value.find((x) => x.key === key);
@@ -65,6 +73,17 @@ function statusLabel(s) {
   return s === 'done' ? '完成' : s === 'running' ? '研究中' : '待开始';
 }
 
+function taskStatusText(s) {
+  return s === 'done' ? '完成' : s === 'failed' ? '失败' : s === 'cancelled' ? '已取消' : '进行中';
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function allResearchersDone() {
   return researchers.value.length > 0 && researchers.value.every((r) => r.status === 'done');
 }
@@ -80,6 +99,35 @@ function reset() {
   toolLogs.value = [];
   resetStages();
   cancelled = false;
+}
+
+async function loadTasks() {
+  try {
+    const res = await fetch('/api/tasks');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    tasks.value = await res.json();
+  } catch {
+    // 静默失败，不影响主流程
+  }
+}
+
+async function openTask(id) {
+  error.value = '';
+  notice.value = '';
+  try {
+    const res = await fetch(`/api/tasks/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    currentTask.value = await res.json();
+    view.value = 'history';
+  } catch (e) {
+    error.value = `加载历史记录失败：${e.message}`;
+  }
+}
+
+function newResearch() {
+  if (!running.value) reset();
+  view.value = 'new';
+  currentTask.value = null;
 }
 
 async function submit() {
@@ -141,11 +189,13 @@ async function submit() {
       setStage('done', 'done');
       running.value = false;
       stopTimer();
+      loadTasks();
     },
     error: (d) => {
       if (!cancelled) error.value = d.message || '出错了';
       running.value = false;
       stopTimer();
+      loadTasks();
     },
     close: () => {
       running.value = false;
@@ -168,114 +218,169 @@ function retry() {
   notice.value = '';
   submit();
 }
+
+onMounted(loadTasks);
 </script>
 
 <template>
-  <div class="page">
-    <header class="hero">
-      <div class="hero-badge">Multi-Agent · Deep Research</div>
-      <h1 class="logo">Deep<span class="grad">Research</span></h1>
-      <p class="tagline">Planner → Researcher → Writer ⇄ Critic</p>
-    </header>
-
-    <div class="input-card">
-      <textarea
-        v-model="question"
-        placeholder="输入你的研究问题…（Ctrl+Enter 提交）"
-        @keydown.ctrl.enter="submit"
-      ></textarea>
-      <div class="input-actions">
-        <button class="btn-primary" @click="submit" :disabled="running">
-          {{ running ? '研究中…' : '开始研究' }}
-        </button>
-        <button v-if="running" class="btn-ghost" @click="cancel">取消</button>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">Deep<span class="grad">Research</span></div>
+      <button class="btn-new" @click="newResearch">＋ 新研究</button>
+      <div class="sidebar-title">历史记录</div>
+      <div class="history-list">
+        <div v-if="!tasks.length" class="history-empty">暂无历史记录</div>
+        <div
+          v-for="t in tasks"
+          :key="t.id"
+          class="history-item"
+          :class="{ active: view === 'history' && currentTask?.id === t.id }"
+          @click="openTask(t.id)"
+        >
+          <div class="history-q">{{ t.question }}</div>
+          <div class="history-meta">
+            <span class="dot" :class="t.status"></span>
+            {{ fmtDate(t.created_at) }} · {{ taskStatusText(t.status) }}
+          </div>
+        </div>
       </div>
-    </div>
+    </aside>
 
-    <p v-if="notice" class="notice">⏸ {{ notice }}</p>
-    <div v-if="error" class="error">
-      <span>❌ {{ error }}</span>
-      <button class="retry-btn" @click="retry">重试</button>
-    </div>
+    <main class="main">
+      <div class="page">
+        <p v-if="notice" class="notice">⏸ {{ notice }}</p>
+        <div v-if="error" class="error">
+          <span>❌ {{ error }}</span>
+          <button v-if="view === 'new'" class="retry-btn" @click="retry">重试</button>
+        </div>
 
-    <section v-if="plan && !simpleMode" class="card">
-      <div class="stepper-row">
-        <div class="stepper-track">
-          <template v-for="(s, i) in stages" :key="s.key">
-            <div class="step" :class="s.status">
-              <div class="step-dot">
-                <span v-if="s.status === 'done'">✓</span>
-                <span v-else>{{ i + 1 }}</span>
-              </div>
-              <div class="step-label">{{ s.label }}</div>
+        <template v-if="view === 'new'">
+          <header class="hero">
+            <div class="hero-badge">Multi-Agent · Deep Research</div>
+            <h1 class="logo">Deep<span class="grad">Research</span></h1>
+            <p class="tagline">Planner → Researcher → Writer ⇄ Critic</p>
+          </header>
+
+          <div class="input-card">
+            <textarea
+              v-model="question"
+              placeholder="输入你的研究问题…（Ctrl+Enter 提交）"
+              @keydown.ctrl.enter="submit"
+            ></textarea>
+            <div class="input-actions">
+              <button class="btn-primary" @click="submit" :disabled="running">
+                {{ running ? '研究中…' : '开始研究' }}
+              </button>
+              <button v-if="running" class="btn-ghost" @click="cancel">取消</button>
             </div>
-            <div
-              v-if="i < stages.length - 1"
-              class="step-line"
-              :class="{ done: s.status === 'done' }"
-            ></div>
-          </template>
-        </div>
-        <div class="elapsed">⏱ {{ fmtElapsed(elapsed) }}</div>
-      </div>
-    </section>
+          </div>
 
-    <section v-if="plan" class="card">
-      <h2 class="card-title"><span class="icon">📋</span> 研究计划</h2>
-      <p v-if="simpleMode" class="muted">简单问题，直接回答</p>
-      <ul v-else class="plan-list">
-        <li v-for="(sq, i) in plan.sub_questions" :key="i" class="plan-item">
-          <span class="idx">{{ String(i + 1).padStart(2, '0') }}</span>
-          <span>{{ sq }}</span>
-        </li>
-      </ul>
-    </section>
+          <section v-if="plan && !simpleMode" class="card">
+            <div class="stepper-row">
+              <div class="stepper-track">
+                <template v-for="(s, i) in stages" :key="s.key">
+                  <div class="step" :class="s.status">
+                    <div class="step-dot">
+                      <span v-if="s.status === 'done'">✓</span>
+                      <span v-else>{{ i + 1 }}</span>
+                    </div>
+                    <div class="step-label">{{ s.label }}</div>
+                  </div>
+                  <div
+                    v-if="i < stages.length - 1"
+                    class="step-line"
+                    :class="{ done: s.status === 'done' }"
+                  ></div>
+                </template>
+              </div>
+              <div class="elapsed">⏱ {{ fmtElapsed(elapsed) }}</div>
+            </div>
+          </section>
 
-    <section v-if="researchers.length" class="card">
-      <h2 class="card-title"><span class="icon">🔍</span> 研究员</h2>
-      <div v-for="r in researchers" :key="r.index" class="agent-row">
-        <span class="dot" :class="r.status"></span>
-        <span class="agent-q">{{ r.sub_question }}</span>
-        <span class="agent-state">{{ statusLabel(r.status) }}</span>
-      </div>
-    </section>
+          <section v-if="plan" class="card">
+            <h2 class="card-title"><span class="icon">📋</span> 研究计划</h2>
+            <p v-if="simpleMode" class="muted">简单问题，直接回答</p>
+            <ul v-else class="plan-list">
+              <li v-for="(sq, i) in plan.sub_questions" :key="i" class="plan-item">
+                <span class="idx">{{ String(i + 1).padStart(2, '0') }}</span>
+                <span>{{ sq }}</span>
+              </li>
+            </ul>
+          </section>
 
-    <section v-if="criticRounds.length" class="card">
-      <h2 class="card-title"><span class="icon">✅</span> 审核</h2>
-      <div v-for="c in criticRounds" :key="c.round" class="critic-row">
-        <span class="round">第 {{ c.round }} 轮</span>
-        <span class="badge" :class="c.approved ? 'ok' : 'fail'">
-          {{ c.approved ? '通过' : '打回' }}
-        </span>
-        <span v-if="!c.approved && c.feedback" class="feedback">{{ c.feedback }}</span>
-      </div>
-    </section>
+          <section v-if="researchers.length" class="card">
+            <h2 class="card-title"><span class="icon">🔍</span> 研究员</h2>
+            <div v-for="r in researchers" :key="r.index" class="agent-row">
+              <span class="dot" :class="r.status"></span>
+              <span class="agent-q">{{ r.sub_question }}</span>
+              <span class="agent-state">{{ statusLabel(r.status) }}</span>
+            </div>
+          </section>
 
-    <section v-if="report" class="card report-card">
-      <div class="report-header">
-        <h2 class="card-title">
-          <span class="icon">📄</span> 最终报告
-          <span class="elapsed-final">· ⏱ {{ fmtElapsed(elapsed) }}</span>
-        </h2>
-        <div class="export-actions">
-          <button class="btn-export" @click="exportWord(report, 'deep-research-report.docx')">
-            导出 Word
-          </button>
-          <button class="btn-export" @click="exportPdf(reportEl, 'deep-research-report.pdf')">
-            导出 PDF
-          </button>
-        </div>
-      </div>
-      <div ref="reportEl">
-        <MarkdownView :source="report" />
-      </div>
-    </section>
+          <section v-if="criticRounds.length" class="card">
+            <h2 class="card-title"><span class="icon">✅</span> 审核</h2>
+            <div v-for="c in criticRounds" :key="c.round" class="critic-row">
+              <span class="round">第 {{ c.round }} 轮</span>
+              <span class="badge" :class="c.approved ? 'ok' : 'fail'">
+                {{ c.approved ? '通过' : '打回' }}
+              </span>
+              <span v-if="!c.approved && c.feedback" class="feedback">{{ c.feedback }}</span>
+            </div>
+          </section>
 
-    <section v-if="toolLogs.length" class="card">
-      <button class="log-toggle" @click="showTools = !showTools">
-        {{ showTools ? '▾' : '▸' }} 工具日志 · {{ toolLogs.length }}
-      </button>
-      <pre v-if="showTools" class="log-panel">{{ toolLogs.join('\n') }}</pre>
-    </section>
+          <section v-if="toolLogs.length" class="card">
+            <button class="log-toggle" @click="showTools = !showTools">
+              {{ showTools ? '▾' : '▸' }} 工具日志 · {{ toolLogs.length }}
+            </button>
+            <pre v-if="showTools" class="log-panel">{{ toolLogs.join('\n') }}</pre>
+          </section>
+        </template>
+
+        <template v-else>
+          <div class="history-head">
+            <button class="back-link" @click="newResearch">← 返回新研究</button>
+            <h1>{{ currentTask?.question }}</h1>
+            <p class="muted">
+              {{ currentTask ? fmtDate(currentTask.created_at) : '' }}
+              · {{ currentTask ? taskStatusText(currentTask.status) : '' }}
+            </p>
+          </div>
+        </template>
+
+        <template v-if="activeReport">
+          <section class="card report-card">
+            <div class="report-header">
+              <h2 class="card-title">
+                <span class="icon">📄</span> 最终报告
+                <span v-if="view === 'new'" class="elapsed-final">· ⏱ {{ fmtElapsed(elapsed) }}</span>
+              </h2>
+              <div class="export-actions">
+                <button class="btn-export" @click="exportWord(activeReport, 'deep-research-report.docx')">
+                  导出 Word
+                </button>
+                <button class="btn-export" @click="exportPdf(reportEl, 'deep-research-report.pdf')">
+                  导出 PDF
+                </button>
+              </div>
+            </div>
+            <div ref="reportEl">
+              <MarkdownView :source="activeReport" />
+            </div>
+          </section>
+
+          <section v-if="view === 'history' && currentTask?.sources?.length" class="card">
+            <h2 class="card-title"><span class="icon">🔗</span> 引用来源</h2>
+            <ol class="sources-list">
+              <li v-for="s in currentTask.sources" :key="s.citation_id">
+                <a :href="s.url" target="_blank" rel="noopener">{{ s.title || s.url }}</a>
+              </li>
+            </ol>
+          </section>
+        </template>
+        <p v-else-if="view === 'history' && currentTask" class="muted">
+          {{ currentTask.status === 'cancelled' ? '该任务已取消。' : '该任务没有生成报告（可能生成失败）。' }}
+        </p>
+      </div>
+    </main>
   </div>
 </template>

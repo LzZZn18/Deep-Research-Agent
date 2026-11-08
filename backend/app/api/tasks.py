@@ -2,7 +2,7 @@ import asyncio
 import json
 from functools import lru_cache
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.agent.orchestrator import run_deep_research
@@ -77,9 +77,17 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
                 researcher_steps=settings.researcher_steps,
                 emit=emit,
             )
+            await asyncio.to_thread(store.save_report, task_id, content)
             await asyncio.to_thread(store.finish_task, task_id, "done")
             await emit("answer", {"content": content})
             await emit("task_end", {})
+        except asyncio.CancelledError:
+            if task_id is not None:
+                # 协程已被取消，不能再 await；用线程池把任务标记为“已取消”
+                asyncio.get_running_loop().run_in_executor(
+                    None, store.finish_task, task_id, "cancelled"
+                )
+            raise
         except Exception as e:
             if task_id is not None:
                 try:
@@ -92,13 +100,39 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
 
     async def event_stream():
         task = asyncio.create_task(run())
-        while True:
-            item = await queue.get()
-            if item is None:
-                break
-            event, data = item
-            yield _sse(event, data)
-        await task
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                event, data = item
+                yield _sse(event, data)
+            await task  # 正常结束：等待后台任务收尾
+        finally:
+            # 客户端断开（取消/关闭页面）时，终止仍在运行的后台研究
+            if not task.done():
+                task.cancel()
+                try:
+                    await asyncio.shield(task)
+                except BaseException:
+                    pass
 
     headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
+
+
+@router.get("/tasks")
+async def list_tasks():
+    store = get_store()
+    await asyncio.to_thread(store.init_schema)
+    return await asyncio.to_thread(store.list_tasks, 50)
+
+
+@router.get("/tasks/{task_id}")
+async def get_task(task_id: int):
+    store = get_store()
+    await asyncio.to_thread(store.init_schema)
+    task = await asyncio.to_thread(store.get_task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return task

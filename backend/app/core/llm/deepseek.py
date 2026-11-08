@@ -19,14 +19,22 @@ class DeepSeekProvider(LLMProvider):
             payload["tools"] = tools
 
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                json=payload,
-                headers=headers,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        url = f"{self.base_url}/chat/completions"
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.RequestError as e:
+            # 覆盖 DNS 解析失败 / 连接被拒 / 超时等网络层错误，附上目标域名
+            raise RuntimeError(
+                f"无法连接 DeepSeek（{self.base_url}）：网络或 DNS 解析失败，"
+                f"请检查网络/代理/防火墙。原始错误：{e}"
+            ) from e
+        except httpx.HTTPStatusError as e:
+            raise RuntimeError(
+                f"DeepSeek 返回 HTTP {e.response.status_code}：{e.response.text[:300]}"
+            ) from e
 
         message = data["choices"][0]["message"]
         content = message.get("content") or ""

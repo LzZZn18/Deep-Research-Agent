@@ -15,6 +15,7 @@ async def run_agent(
     query: str,
     max_steps: int,
     emit: EmitFn | None = None,
+    system_prompt: str = SYSTEM_PROMPT,
 ) -> LLMResponse:
     """手写 tool-calling 循环：
 
@@ -26,7 +27,7 @@ async def run_agent(
     tool_schemas = [t.to_schema() for t in tools]
 
     messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": query},
     ]
 

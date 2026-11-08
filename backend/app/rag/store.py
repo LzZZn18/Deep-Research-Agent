@@ -114,7 +114,13 @@ class VectorStore:
         return row[0]
 
     def _assign_citation(self, conn, task_id: int, source_id: int) -> int:
-        """把来源关联到任务并分配任务内引用号（已存在则复用）。"""
+        """把来源关联到任务并分配任务内引用号（已存在则复用）。
+
+        先对任务行加 FOR UPDATE 锁，保证并发 Researcher 下引用编号不重号。
+        """
+        conn.execute(
+            "SELECT id FROM research_task WHERE id = %s FOR UPDATE", (task_id,)
+        )
         conn.execute(
             """
             INSERT INTO task_source (task_id, source_id, citation_no)
@@ -289,6 +295,21 @@ class VectorStore:
                 })
             conn.commit()
             return results
+
+    def list_task_sources(self, task_id: int) -> list[dict]:
+        """列出任务所有来源的引用表（[n] → 标题/链接），供撰写/审核使用。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT ts.citation_no, s.title, s.url
+                FROM task_source ts
+                JOIN source s ON s.id = ts.source_id
+                WHERE ts.task_id = %s
+                ORDER BY ts.citation_no
+                """,
+                (task_id,),
+            ).fetchall()
+        return [{"citation_id": r[0], "title": r[1], "url": r[2]} for r in rows]
 
     def finish_task(self, task_id: int, status: str = "done") -> None:
         with self._connect() as conn:

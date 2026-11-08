@@ -1,4 +1,5 @@
 import os
+import threading
 from abc import ABC, abstractmethod
 
 from app.core.config import get_settings
@@ -26,6 +27,9 @@ class FastEmbedEmbedder(Embedder):
     def __init__(self, model_name: str, dim: int):
         self.dim = dim
         self._model = TextEmbedding(model_name=model_name)
+        self._lock = threading.Lock()
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        return [v.tolist() for v in self._model.embed(texts)]
+        # fastembed 底层 onnxruntime + tokenizer 并发不安全，加锁串行化。
+        with self._lock:
+            return [v.tolist() for v in self._model.embed(texts)]

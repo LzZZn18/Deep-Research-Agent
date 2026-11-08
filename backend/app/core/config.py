@@ -28,6 +28,9 @@ class Settings(BaseSettings):
 
     # Agent
     max_agent_steps: int = 8
+    researcher_steps: int = 5
+    max_sub_questions: int = 3
+    max_critic_rounds: int = 2
 
 
 @lru_cache

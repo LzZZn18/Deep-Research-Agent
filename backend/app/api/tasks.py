@@ -5,7 +5,7 @@ from functools import lru_cache
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from app.agent.loop import run_agent
+from app.agent.orchestrator import run_deep_research
 from app.core.config import Settings, get_settings
 from app.core.llm.deepseek import DeepSeekProvider
 from app.rag.embedding import FastEmbedEmbedder
@@ -66,15 +66,19 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
                 VectorSearchTool(store=store, embedder=embedder, task_id=task_id),
             ]
             await emit("task_start", {"question": req.question, "task_id": task_id})
-            response = await run_agent(
+            content = await run_deep_research(
                 provider=provider,
+                store=store,
                 tools=tools,
-                query=req.question,
-                max_steps=settings.max_agent_steps,
+                question=req.question,
+                task_id=task_id,
+                max_sub_questions=settings.max_sub_questions,
+                max_critic_rounds=settings.max_critic_rounds,
+                researcher_steps=settings.researcher_steps,
                 emit=emit,
             )
             await asyncio.to_thread(store.finish_task, task_id, "done")
-            await emit("answer", {"content": response.content})
+            await emit("answer", {"content": content})
             await emit("task_end", {})
         except Exception as e:
             if task_id is not None:

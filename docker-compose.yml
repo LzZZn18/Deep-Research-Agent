@@ -17,5 +17,39 @@ services:
       timeout: 5s
       retries: 10
 
+  backend:
+    build: ./backend
+    container_name: deepsearch-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      # 容器内通过服务名访问 db，不能用 localhost
+      DB_URL: postgresql://deepsearch:deepsearch@db:5432/deepsearch
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      # 持久化 fastembed/BGE 模型缓存，避免每次重启重新下载
+      - embedding-cache:/root/.cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  frontend:
+    build: ./frontend
+    container_name: deepsearch-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
 volumes:
   pgdata:
+  embedding-cache:

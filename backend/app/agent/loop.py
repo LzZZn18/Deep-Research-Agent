@@ -1,9 +1,12 @@
+import asyncio
 import json
 import time
 from typing import Awaitable, Callable
 
 from app.agent.prompts import SYSTEM_PROMPT
+from app.core.config import get_settings
 from app.core.llm.base import LLMProvider, LLMResponse
+from app.core.retry import call_with_retry
 from app.tools.base import Tool
 
 # emit: 推送 SSE 事件的回调 (event, data) -> awaitable
@@ -30,6 +33,7 @@ async def run_agent(
     """
     tool_map = {t.name: t for t in tools}
     tool_schemas = [t.to_schema() for t in tools]
+    settings = get_settings()
 
     messages: list[dict] = [
         {"role": "system", "content": system_prompt},
@@ -82,8 +86,18 @@ async def run_agent(
                 result = f"错误：未知工具 {tc.name}"
             else:
                 try:
-                    result = await tool.run(**tc.arguments)
-                except Exception as e:  # 工具异常不让整个任务崩溃
+                    result = await call_with_retry(
+                        lambda: tool.run(**tc.arguments),
+                        retries=settings.tool_retries,
+                        timeout=settings.tool_timeout,
+                        retry_on=(Exception,),
+                    )
+                except asyncio.TimeoutError:
+                    result = (
+                        f"工具执行超时（>{settings.tool_timeout:g}s，"
+                        f"已重试 {settings.tool_retries} 次）：{tc.name}"
+                    )
+                except Exception as e:  # 重试后仍失败，不让整个任务崩溃
                     result = f"工具执行出错：{e}"
             tool_ms = int((time.perf_counter() - t0) * 1000)
 

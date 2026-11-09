@@ -40,6 +40,8 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
         api_key=settings.deepseek_api_key,
         base_url=settings.deepseek_base_url,
         model=settings.deepseek_model,
+        timeout=settings.llm_timeout,
+        retries=settings.llm_retries,
     )
     store = get_store()
     embedder = get_embedder()

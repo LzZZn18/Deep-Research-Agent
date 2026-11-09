@@ -1,18 +1,29 @@
+import asyncio
 import json
 import time
 
 import httpx
 
 from app.core.llm.base import LLMProvider, LLMResponse, ToolCall
+from app.core.retry import call_with_retry
 
 
 class DeepSeekProvider(LLMProvider):
     """DeepSeek 实现（OpenAI 兼容协议，直接用 httpx 手写，不依赖 SDK）。"""
 
-    def __init__(self, api_key: str, base_url: str, model: str):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        model: str,
+        timeout: float = 60.0,
+        retries: int = 2,
+    ):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.timeout = timeout
+        self.retries = retries
 
     async def chat(self, messages: list[dict], tools: list[dict]) -> LLMResponse:
         payload: dict = {"model": self.model, "messages": messages}
@@ -21,12 +32,25 @@ class DeepSeekProvider(LLMProvider):
 
         headers = {"Authorization": f"Bearer {self.api_key}"}
         url = f"{self.base_url}/chat/completions"
+
+        async def _post() -> httpx.Response:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                await resp.aread()  # 先读完整响应体，客户端关闭后 resp 仍可用
+                if resp.status_code >= 500:
+                    resp.raise_for_status()  # 5xx → 抛 HTTPStatusError，触发重试
+                return resp  # 2xx/4xx 返回，交给外层处理
+
         start = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.post(url, json=payload, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
+            resp = await call_with_retry(
+                _post,
+                retries=self.retries,
+                timeout=self.timeout,
+                retry_on=(httpx.RequestError, httpx.HTTPStatusError),
+            )
+            resp.raise_for_status()  # 4xx 在此直接抛，不重试
+            data = resp.json()
         except httpx.RequestError as e:
             # 覆盖 DNS 解析失败 / 连接被拒 / 超时等网络层错误，附上目标域名
             raise RuntimeError(
@@ -36,6 +60,10 @@ class DeepSeekProvider(LLMProvider):
         except httpx.HTTPStatusError as e:
             raise RuntimeError(
                 f"DeepSeek 返回 HTTP {e.response.status_code}：{e.response.text[:300]}"
+            ) from e
+        except asyncio.TimeoutError as e:
+            raise RuntimeError(
+                f"调用 DeepSeek 超时（>{self.timeout:g}s，已重试 {self.retries} 次）"
             ) from e
         duration_ms = int((time.perf_counter() - start) * 1000)
 

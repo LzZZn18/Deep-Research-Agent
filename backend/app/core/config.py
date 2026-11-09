@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     max_sub_questions: int = 3
     max_critic_rounds: int = 2
 
+    # 可靠性：超时与重试
+    tool_timeout: float = 30.0  # 单次工具调用超时（秒）
+    tool_retries: int = 2       # 工具失败重试次数
+    llm_timeout: float = 60.0   # LLM 调用超时（秒）
+    llm_retries: int = 2        # LLM 失败重试次数
+
 
 @lru_cache
 def get_settings() -> Settings:

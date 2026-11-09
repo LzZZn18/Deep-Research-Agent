@@ -18,6 +18,10 @@ class LLMResponse:
 
     content: str
     tool_calls: list[ToolCall] = field(default_factory=list)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    duration_ms: int = 0
 
 
 class LLMProvider(ABC):

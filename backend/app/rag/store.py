@@ -99,6 +99,22 @@ class VectorStore:
                     ON chunk USING hnsw (embedding vector_cosine_ops);
                 CREATE INDEX IF NOT EXISTS source_pool_long_term_idx
                     ON source_pool (is_long_term) WHERE is_long_term;
+                CREATE TABLE IF NOT EXISTS task_trace (
+                    id SERIAL PRIMARY KEY,
+                    task_id INTEGER NOT NULL REFERENCES research_task(id) ON DELETE CASCADE,
+                    agent TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    name TEXT,
+                    input_preview TEXT,
+                    output_preview TEXT,
+                    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    total_tokens INTEGER NOT NULL DEFAULT 0,
+                    cost REAL NOT NULL DEFAULT 0,
+                    duration_ms INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+                CREATE INDEX IF NOT EXISTS task_trace_task_idx ON task_trace (task_id);
                 """
             )
             # 历史记录：保存最终报告（已存在的库用 IF NOT EXISTS 平滑加列）
@@ -373,6 +389,89 @@ class VectorStore:
             "report": row[3],
             "created_at": row[4].isoformat(),
             "sources": [{"citation_id": r[0], "title": r[1], "url": r[2]} for r in sources],
+        }
+
+    def add_trace(
+        self,
+        task_id: int,
+        agent: str,
+        kind: str,
+        name: str,
+        input_preview: str,
+        output_preview: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        cost: float,
+        duration_ms: int,
+    ) -> None:
+        """记录一次 LLM/工具调用轨迹（可观测性）。"""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO task_trace
+                    (task_id, agent, kind, name, input_preview, output_preview,
+                     prompt_tokens, completion_tokens, total_tokens, cost, duration_ms)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (task_id, agent, kind, name, input_preview, output_preview,
+                 prompt_tokens, completion_tokens, total_tokens, cost, duration_ms),
+            )
+            conn.commit()
+
+    def list_trace(self, task_id: int) -> list[dict]:
+        """列出任务所有轨迹（逐步明细）。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, agent, kind, name, input_preview, output_preview,
+                       prompt_tokens, completion_tokens, total_tokens, cost, duration_ms, created_at
+                FROM task_trace
+                WHERE task_id = %s
+                ORDER BY id
+                """,
+                (task_id,),
+            ).fetchall()
+        return [
+            {
+                "id": r[0], "agent": r[1], "kind": r[2], "name": r[3],
+                "input_preview": r[4], "output_preview": r[5],
+                "prompt_tokens": r[6], "completion_tokens": r[7], "total_tokens": r[8],
+                "cost": r[9], "duration_ms": r[10], "created_at": r[11].isoformat(),
+            }
+            for r in rows
+        ]
+
+    def task_stats(self, task_id: int) -> dict:
+        """汇总任务的 token / 成本 / 耗时，并按 agent 分组。"""
+        with self._connect() as conn:
+            totals = conn.execute(
+                """
+                SELECT COALESCE(SUM(prompt_tokens), 0), COALESCE(SUM(completion_tokens), 0),
+                       COALESCE(SUM(total_tokens), 0), COALESCE(SUM(cost), 0),
+                       COALESCE(SUM(duration_ms), 0), COUNT(*)
+                FROM task_trace WHERE task_id = %s
+                """,
+                (task_id,),
+            ).fetchone()
+            rows = conn.execute(
+                """
+                SELECT agent, SUM(total_tokens), SUM(cost), SUM(duration_ms), COUNT(*)
+                FROM task_trace WHERE task_id = %s GROUP BY agent ORDER BY agent
+                """,
+                (task_id,),
+            ).fetchall()
+        return {
+            "prompt_tokens": totals[0],
+            "completion_tokens": totals[1],
+            "total_tokens": totals[2],
+            "total_cost": totals[3],
+            "total_duration_ms": totals[4],
+            "calls": totals[5],
+            "by_agent": {
+                r[0]: {"tokens": r[1], "cost": r[2], "duration_ms": r[3], "calls": r[4]}
+                for r in rows
+            },
         }
 
 

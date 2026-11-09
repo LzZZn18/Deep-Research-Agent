@@ -1,4 +1,5 @@
 import json
+import time
 
 import httpx
 
@@ -20,6 +21,7 @@ class DeepSeekProvider(LLMProvider):
 
         headers = {"Authorization": f"Bearer {self.api_key}"}
         url = f"{self.base_url}/chat/completions"
+        start = time.perf_counter()
         try:
             async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(url, json=payload, headers=headers)
@@ -35,6 +37,7 @@ class DeepSeekProvider(LLMProvider):
             raise RuntimeError(
                 f"DeepSeek 返回 HTTP {e.response.status_code}：{e.response.text[:300]}"
             ) from e
+        duration_ms = int((time.perf_counter() - start) * 1000)
 
         message = data["choices"][0]["message"]
         content = message.get("content") or ""
@@ -48,4 +51,12 @@ class DeepSeekProvider(LLMProvider):
                 args = {}
             tool_calls.append(ToolCall(id=tc["id"], name=fn["name"], arguments=args))
 
-        return LLMResponse(content=content, tool_calls=tool_calls)
+        usage = data.get("usage") or {}
+        return LLMResponse(
+            content=content,
+            tool_calls=tool_calls,
+            prompt_tokens=usage.get("prompt_tokens") or 0,
+            completion_tokens=usage.get("completion_tokens") or 0,
+            total_tokens=usage.get("total_tokens") or 0,
+            duration_ms=duration_ms,
+        )

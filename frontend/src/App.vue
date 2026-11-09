@@ -16,10 +16,24 @@ const report = ref('');
 const reportEl = ref(null);
 const toolLogs = ref([]);
 const showTools = ref(false);
+const showStats = ref(false);
 
 const view = ref('new');
 const tasks = ref([]);
 const currentTask = ref(null);
+
+function emptyStats() {
+  return {
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    total_tokens: 0,
+    total_cost: 0,
+    total_duration_ms: 0,
+    calls: 0,
+    by_agent: {},
+  };
+}
+const stats = ref(emptyStats());
 
 const stages = ref([
   { key: 'planning', label: '规划', status: 'pending' },
@@ -37,6 +51,22 @@ let cancelled = false;
 const activeReport = computed(() =>
   view.value === 'history' ? currentTask.value?.report || '' : report.value
 );
+
+const activeStats = computed(() =>
+  view.value === 'history' ? currentTask.value?.stats || null : stats.value
+);
+
+const byAgentRows = computed(() => {
+  const s = activeStats.value;
+  if (!s || !s.by_agent) return [];
+  return Object.entries(s.by_agent).map(([agent, v]) => ({
+    agent: agentLabel(agent),
+    tokens: v.tokens,
+    cost: v.cost,
+    duration_ms: v.duration_ms,
+    calls: v.calls,
+  }));
+});
 
 function setStage(key, status) {
   const s = stages.value.find((x) => x.key === key);
@@ -84,6 +114,31 @@ function fmtDate(iso) {
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function agentLabel(a) {
+  if (a === 'planner') return '规划';
+  if (a === 'writer') return '撰写';
+  if (a === 'critic') return '审核';
+  const m = /^researcher-(\d+)$/.exec(a);
+  if (m) return `研究员 ${m[1]}`;
+  return a;
+}
+
+function fmtTokens(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(2) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+  return String(n || 0);
+}
+
+function fmtCost(c) {
+  if (!c) return '0';
+  return c >= 0.01 ? c.toFixed(2) : c.toFixed(4);
+}
+
+function fmtMs(ms) {
+  if (ms >= 1000) return (ms / 1000).toFixed(1) + 's';
+  return (ms || 0) + 'ms';
+}
+
 function allResearchersDone() {
   return researchers.value.length > 0 && researchers.value.every((r) => r.status === 'done');
 }
@@ -97,6 +152,7 @@ function reset() {
   criticRounds.value = [];
   report.value = '';
   toolLogs.value = [];
+  stats.value = emptyStats();
   resetStages();
   cancelled = false;
 }
@@ -167,6 +223,20 @@ async function submit() {
     },
     tool_call: (d) => toolLogs.value.push(`▸ ${d.tool}(${JSON.stringify(d.arguments)})`),
     tool_result: (d) => toolLogs.value.push(`  ${d.result_preview || ''}`),
+    trace: (d) => {
+      const s = stats.value;
+      s.prompt_tokens += d.prompt_tokens || 0;
+      s.completion_tokens += d.completion_tokens || 0;
+      s.total_tokens += d.total_tokens || 0;
+      s.total_cost += d.cost || 0;
+      s.total_duration_ms += d.duration_ms || 0;
+      s.calls += 1;
+      const a = s.by_agent[d.agent] || (s.by_agent[d.agent] = { tokens: 0, cost: 0, duration_ms: 0, calls: 0 });
+      a.tokens += d.total_tokens || 0;
+      a.cost += d.cost || 0;
+      a.duration_ms += d.duration_ms || 0;
+      a.calls += 1;
+    },
     critic_start: () => {
       setStage('writing', 'done');
       setStage('critiquing', 'active');
@@ -346,6 +416,50 @@ onMounted(loadTasks);
             </p>
           </div>
         </template>
+
+        <section v-if="activeStats && activeStats.calls" class="card stats-card">
+          <button class="stats-toggle-btn" @click="showStats = !showStats">
+            <span class="card-title"><span class="icon">📊</span> 成本 / 耗时统计</span>
+            <span v-if="!showStats" class="stats-inline">
+              总 Token {{ fmtTokens(activeStats.total_tokens) }} · ¥{{ fmtCost(activeStats.total_cost) }} · {{ fmtMs(activeStats.total_duration_ms) }}
+            </span>
+            <span class="stats-arrow">{{ showStats ? '▾' : '▸' }}</span>
+          </button>
+          <template v-if="showStats">
+            <div class="stats-summary">
+              <div class="stat">
+                <span class="stat-num">{{ fmtTokens(activeStats.total_tokens) }}</span>
+                <span class="stat-label">总 Token</span>
+              </div>
+              <div class="stat">
+                <span class="stat-num">¥{{ fmtCost(activeStats.total_cost) }}</span>
+                <span class="stat-label">总成本</span>
+              </div>
+              <div class="stat">
+                <span class="stat-num">{{ fmtMs(activeStats.total_duration_ms) }}</span>
+                <span class="stat-label">总耗时</span>
+              </div>
+              <div class="stat">
+                <span class="stat-num">{{ activeStats.calls }}</span>
+                <span class="stat-label">调用次数</span>
+              </div>
+            </div>
+            <table v-if="byAgentRows.length" class="stats-table">
+              <thead>
+                <tr><th>Agent</th><th>Token</th><th>成本</th><th>耗时</th><th>调用</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in byAgentRows" :key="r.agent">
+                  <td>{{ r.agent }}</td>
+                  <td>{{ fmtTokens(r.tokens) }}</td>
+                  <td>¥{{ fmtCost(r.cost) }}</td>
+                  <td>{{ fmtMs(r.duration_ms) }}</td>
+                  <td>{{ r.calls }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </template>
+        </section>
 
         <template v-if="activeReport">
           <section class="card report-card">

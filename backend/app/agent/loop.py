@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Awaitable, Callable
 
 from app.agent.prompts import SYSTEM_PROMPT
@@ -7,6 +8,8 @@ from app.tools.base import Tool
 
 # emit: 推送 SSE 事件的回调 (event, data) -> awaitable
 EmitFn = Callable[[str, dict], Awaitable[None]]
+# trace: 记录一次 LLM/工具调用的回调 (事件 dict) -> awaitable
+TraceFn = Callable[[dict], Awaitable[None]]
 
 
 async def run_agent(
@@ -16,6 +19,8 @@ async def run_agent(
     max_steps: int,
     emit: EmitFn | None = None,
     system_prompt: str = SYSTEM_PROMPT,
+    trace: TraceFn | None = None,
+    label: str = "researcher",
 ) -> LLMResponse:
     """手写 tool-calling 循环：
 
@@ -33,6 +38,17 @@ async def run_agent(
 
     for _ in range(max_steps):
         response = await provider.chat(messages, tool_schemas)
+
+        if trace:
+            await trace({
+                "agent": label,
+                "kind": "llm",
+                "name": "chat",
+                "prompt_tokens": response.prompt_tokens,
+                "completion_tokens": response.completion_tokens,
+                "total_tokens": response.total_tokens,
+                "duration_ms": response.duration_ms,
+            })
 
         if not response.tool_calls:
             return response
@@ -61,6 +77,7 @@ async def run_agent(
                 await emit("tool_call", {"tool": tc.name, "arguments": tc.arguments})
 
             tool = tool_map.get(tc.name)
+            t0 = time.perf_counter()
             if tool is None:
                 result = f"错误：未知工具 {tc.name}"
             else:
@@ -68,9 +85,20 @@ async def run_agent(
                     result = await tool.run(**tc.arguments)
                 except Exception as e:  # 工具异常不让整个任务崩溃
                     result = f"工具执行出错：{e}"
+            tool_ms = int((time.perf_counter() - t0) * 1000)
 
             if emit:
                 await emit("tool_result", {"tool": tc.name, "result_preview": result[:200]})
+
+            if trace:
+                await trace({
+                    "agent": label,
+                    "kind": "tool",
+                    "name": tc.name,
+                    "input_preview": json.dumps(tc.arguments, ensure_ascii=False)[:200],
+                    "output_preview": result[:200],
+                    "duration_ms": tool_ms,
+                })
 
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 

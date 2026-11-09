@@ -135,4 +135,6 @@ async def get_task(task_id: int):
     task = await asyncio.to_thread(store.get_task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
+    task["stats"] = await asyncio.to_thread(store.task_stats, task_id)
+    task["trace"] = await asyncio.to_thread(store.list_trace, task_id)
     return task

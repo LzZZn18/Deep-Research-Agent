@@ -643,3 +643,87 @@ textarea:focus {
 .sources-list a:hover {
   text-decoration: underline;
 }
+
+/* 成本/耗时统计 */
+.stats-summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.stats-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.stats-toggle-btn .card-title {
+  margin: 0;
+  flex: none;
+}
+.stats-inline {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats-arrow {
+  color: var(--text-dim);
+  font-size: 13px;
+  flex: none;
+}
+.stat {
+  flex: 1;
+  min-width: 110px;
+  background: #fafbfd;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stat-num {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
+  font-family: var(--mono);
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.stats-table th,
+.stats-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.stats-table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 12px;
+}
+.stats-table td {
+  font-family: var(--mono);
+  color: #374151;
+}
+.stats-table td:first-child {
+  font-family: inherit;
+  color: #111827;
+}

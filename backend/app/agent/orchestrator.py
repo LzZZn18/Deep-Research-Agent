@@ -2,13 +2,14 @@ import asyncio
 import json
 import re
 
-from app.agent.loop import EmitFn, run_agent
+from app.agent.loop import EmitFn, TraceFn, run_agent
 from app.agent.prompts import (
     CRITIC_PROMPT,
     PLANNER_PROMPT,
     RESEARCHER_PROMPT,
     WRITER_PROMPT,
 )
+from app.core.cost import compute_cost
 from app.core.llm.base import LLMProvider
 from app.rag.store import VectorStore
 from app.tools.base import Tool
@@ -29,7 +30,13 @@ def _extract_json(text: str) -> dict:
         return {}
 
 
-async def _chat(provider: LLMProvider, system_prompt: str, user_content: str) -> str:
+async def _chat(
+    provider: LLMProvider,
+    system_prompt: str,
+    user_content: str,
+    trace: TraceFn | None = None,
+    label: str = "chat",
+) -> str:
     """单次无工具 LLM 调用，返回正文。"""
     resp = await provider.chat(
         [
@@ -38,6 +45,18 @@ async def _chat(provider: LLMProvider, system_prompt: str, user_content: str) ->
         ],
         [],
     )
+    if trace:
+        await trace({
+            "agent": label,
+            "kind": "llm",
+            "name": "chat",
+            "input_preview": user_content[:200],
+            "output_preview": (resp.content or "")[:200],
+            "prompt_tokens": resp.prompt_tokens,
+            "completion_tokens": resp.completion_tokens,
+            "total_tokens": resp.total_tokens,
+            "duration_ms": resp.duration_ms,
+        })
     return (resp.content or "").strip()
 
 
@@ -74,8 +93,31 @@ async def run_deep_research(
     if emit:
         await emit("plan_start", {})
 
+    model = getattr(provider, "model", "")
+
+    async def record(ev: dict) -> None:
+        """把一次 LLM/工具调用记入 trace：算成本 → 实时推送 → 落库。"""
+        cost = compute_cost(model, ev.get("prompt_tokens", 0), ev.get("completion_tokens", 0))
+        ev = {**ev, "cost": cost}
+        if emit:
+            await emit("trace", ev)
+        await asyncio.to_thread(
+            store.add_trace,
+            task_id,
+            ev.get("agent", ""),
+            ev.get("kind", ""),
+            ev.get("name", ""),
+            ev.get("input_preview", ""),
+            ev.get("output_preview", ""),
+            ev.get("prompt_tokens", 0),
+            ev.get("completion_tokens", 0),
+            ev.get("total_tokens", 0),
+            cost,
+            ev.get("duration_ms", 0),
+        )
+
     # 1. Planner：判断复杂度 + 拆子问题
-    plan_text = await _chat(provider, PLANNER_PROMPT, question)
+    plan_text = await _chat(provider, PLANNER_PROMPT, question, trace=record, label="planner")
     plan = _extract_json(plan_text)
     complexity = plan.get("complexity", "research")  # 默认 research（安全侧）
     direct_answer = (plan.get("direct_answer") or "").strip()
@@ -102,6 +144,8 @@ async def run_deep_research(
             max_steps=researcher_steps,
             emit=emit,
             system_prompt=RESEARCHER_PROMPT,
+            trace=record,
+            label=f"researcher-{idx + 1}",
         )
         if emit:
             await emit("researcher_done", {"index": idx, "sub_question": sub_q})
@@ -123,6 +167,8 @@ async def run_deep_research(
         provider,
         WRITER_PROMPT,
         _writer_input(question, sub_questions, findings_text, citations_text),
+        trace=record,
+        label="writer",
     )
     for r in range(max_critic_rounds):
         if emit:
@@ -131,6 +177,8 @@ async def run_deep_research(
             provider,
             CRITIC_PROMPT,
             f"原问题：{question}\n\n引用表：\n{citations_text or '(无)'}\n\n报告：\n{draft}",
+            trace=record,
+            label="critic",
         )
         verdict = _extract_json(verdict_text)
         approved = bool(verdict.get("approved"))
@@ -151,5 +199,7 @@ async def run_deep_research(
                 citations_text,
                 feedback=feedback or "请改进报告。",
             ),
+            trace=record,
+            label="writer",
         )
     return draft

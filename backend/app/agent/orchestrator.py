@@ -9,10 +9,15 @@ from app.agent.prompts import (
     RESEARCHER_PROMPT,
     WRITER_PROMPT,
 )
+from app.core.config import get_settings
 from app.core.cost import compute_cost
 from app.core.llm.base import LLMProvider
 from app.rag.store import VectorStore
 from app.tools.base import Tool
+
+
+class BudgetExceeded(RuntimeError):
+    """单任务 token 超出预算，触发中止。"""
 
 
 def _extract_json(text: str) -> dict:
@@ -94,9 +99,17 @@ async def run_deep_research(
         await emit("plan_start", {})
 
     model = getattr(provider, "model", "")
+    token_budget = get_settings().token_budget
+    used_tokens = 0
 
     async def record(ev: dict) -> None:
         """把一次 LLM/工具调用记入 trace：算成本 → 实时推送 → 落库。"""
+        nonlocal used_tokens
+        used_tokens += ev.get("prompt_tokens", 0) + ev.get("completion_tokens", 0)
+        if token_budget > 0 and used_tokens > token_budget:
+            raise BudgetExceeded(
+                f"超出 token 预算（已用 {used_tokens} / 上限 {token_budget}），已中止研究"
+            )
         cost = compute_cost(model, ev.get("prompt_tokens", 0), ev.get("completion_tokens", 0))
         ev = {**ev, "cost": cost}
         if emit:

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     tool_retries: int = 2       # 工具失败重试次数
     llm_timeout: float = 60.0   # LLM 调用超时（秒）
     llm_retries: int = 2        # LLM 失败重试次数
+    task_timeout: float = 600.0 # 整个研究任务超时（秒）
 
 
 @lru_cache

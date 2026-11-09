@@ -68,17 +68,28 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
                 VectorSearchTool(store=store, embedder=embedder, task_id=task_id),
             ]
             await emit("task_start", {"question": req.question, "task_id": task_id})
-            content = await run_deep_research(
-                provider=provider,
-                store=store,
-                tools=tools,
-                question=req.question,
-                task_id=task_id,
-                max_sub_questions=settings.max_sub_questions,
-                max_critic_rounds=settings.max_critic_rounds,
-                researcher_steps=settings.researcher_steps,
-                emit=emit,
-            )
+            try:
+                content = await asyncio.wait_for(
+                    run_deep_research(
+                        provider=provider,
+                        store=store,
+                        tools=tools,
+                        question=req.question,
+                        task_id=task_id,
+                        max_sub_questions=settings.max_sub_questions,
+                        max_critic_rounds=settings.max_critic_rounds,
+                        researcher_steps=settings.researcher_steps,
+                        emit=emit,
+                    ),
+                    timeout=settings.task_timeout,
+                )
+            except asyncio.TimeoutError:
+                await asyncio.to_thread(store.finish_task, task_id, "failed")
+                await emit(
+                    "error",
+                    {"message": f"研究超时（超过 {settings.task_timeout:g}s），已自动中止"},
+                )
+                return
             await asyncio.to_thread(store.save_report, task_id, content)
             await asyncio.to_thread(store.finish_task, task_id, "done")
             await emit("answer", {"content": content})

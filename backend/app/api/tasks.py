@@ -2,6 +2,7 @@ import asyncio
 import json
 from functools import lru_cache
 
+import redis.asyncio as aioredis
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException
@@ -185,6 +186,61 @@ async def cancel(task_id: int):
         raise HTTPException(status_code=404, detail="任务不存在")
     await asyncio.to_thread(store.set_task_status, task_id, "cancelled")
     return {"status": "cancelled"}
+
+
+@router.get("/tasks/{task_id}/events")
+async def task_events(task_id: int, settings: Settings = Depends(get_settings)):
+    """SSE 实时进度：先补发一份快照，再订阅 Redis 频道转发 worker 的实时事件。"""
+    store = get_store()
+    await asyncio.to_thread(store.init_schema)
+    task = await asyncio.to_thread(store.get_task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    async def event_stream():
+        # 1. 先补发快照，前端据此重建当前进度（含已落库的 plan/stats/trace/report）
+        snapshot = dict(task)
+        snapshot["stats"] = await asyncio.to_thread(store.task_stats, task_id)
+        snapshot["trace"] = await asyncio.to_thread(store.list_trace, task_id)
+        cp = await asyncio.to_thread(store.load_checkpoint, task_id)
+        snapshot["plan"] = cp.get("plan") if cp else {}
+        snapshot["findings"] = cp.get("findings") if cp else []
+        snapshot["critic_rounds"] = cp.get("critic_rounds") if cp else []
+        snapshot["stage"] = cp.get("stage") if cp else None
+        yield _sse("snapshot", snapshot)
+
+        # 2. 已结束的任务：补发终态事件并关闭，不订阅
+        if task["status"] == "done":
+            yield _sse("answer", {"content": task.get("report") or ""})
+            yield _sse("task_end", {})
+            return
+        if task["status"] == "failed":
+            yield _sse("error", {"message": "研究失败，可点击「继续研究」从断点恢复"})
+            yield _sse("task_end", {})
+            return
+        if task["status"] == "cancelled":
+            yield _sse("task_end", {})
+            return
+
+        # 3. pending/running：订阅频道，转发 worker 发布的实时事件
+        redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(f"task:{task_id}")
+        try:
+            async for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+                data = json.loads(message["data"])
+                yield _sse(data["event"], data["data"])
+                if data["event"] == "task_end":
+                    break
+        finally:
+            await pubsub.unsubscribe(f"task:{task_id}")
+            await pubsub.close()
+            await redis.aclose()
+
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
 
 
 @router.get("/tasks")

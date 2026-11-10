@@ -1,7 +1,13 @@
-"""后台 worker：从 Redis 队列取研究任务，跑流水线并落库（阶段1：无实时推送，靠轮询）。"""
+"""后台 worker：从 Redis 队列取研究任务，跑流水线并落库。
+
+阶段2：通过 Redis pub/sub 把进度事件实时发布到 ``task:{id}`` 频道，
+后端 SSE 端点订阅该频道转发给前端。
+"""
 
 import asyncio
+import json
 
+import redis.asyncio as aioredis
 from arq.connections import RedisSettings
 from arq.worker import Worker
 
@@ -18,6 +24,15 @@ _settings = get_settings()
 _store = None
 _embedder = None
 _provider = None
+_redis = None
+
+
+def _redis_client() -> aioredis.Redis:
+    """进程内复用发布用的 Redis 连接。"""
+    global _redis
+    if _redis is None:
+        _redis = aioredis.from_url(_settings.redis_url, decode_responses=True)
+    return _redis
 
 
 def _deps():
@@ -46,6 +61,14 @@ async def run_research_task(ctx, task_id: int, question: str) -> None:
     if not started:
         return
 
+    channel = f"task:{task_id}"
+
+    async def emit(event: str, data: dict) -> None:
+        """把进度事件发布到 Redis 频道，由后端 SSE 端点转发给前端。"""
+        await _redis_client().publish(
+            channel, json.dumps({"event": event, "data": data})
+        )
+
     tools = [
         SearchTool(api_key=_settings.tavily_api_key),
         FetchTool(store=store, embedder=embedder, task_id=task_id),
@@ -63,18 +86,25 @@ async def run_research_task(ctx, task_id: int, question: str) -> None:
                 max_sub_questions=_settings.max_sub_questions,
                 max_critic_rounds=_settings.max_critic_rounds,
                 researcher_steps=_settings.researcher_steps,
+                emit=emit,
             ),
             timeout=_settings.task_timeout,
         )
     except asyncio.TimeoutError:
+        await emit("error", {"message": f"研究超时（超过 {_settings.task_timeout:g}s），已自动中止"})
+        await emit("task_end", {})
         await asyncio.to_thread(store.finish_if_running, task_id, "failed")
         return
-    except Exception:
+    except Exception as e:
+        await emit("error", {"message": f"研究失败：{e}"})
+        await emit("task_end", {})
         await asyncio.to_thread(store.finish_if_running, task_id, "failed")
         return
 
     await asyncio.to_thread(store.save_report, task_id, content)
     await asyncio.to_thread(store.finish_if_running, task_id, "done")
+    await emit("answer", {"content": content})
+    await emit("task_end", {})
 
 
 if __name__ == "__main__":

@@ -87,3 +87,38 @@ export async function resumeTaskAsync(taskId) {
   }
   return res.json();
 }
+
+/**
+ * 订阅一个任务的实时进度（GET + SSE 流）。
+ * @param {number|string} taskId
+ * @param {{ onEvent?: (event:string, data:any) => void, onError?: (err:any) => void, onClose?: () => void }} handlers
+ * @returns {AbortController} 用于取消订阅
+ */
+export function subscribeEvents(taskId, { onEvent, onError, onClose } = {}) {
+  const controller = new AbortController();
+  fetchEventSource(`/api/tasks/${taskId}/events`, {
+    signal: controller.signal,
+    openWhenHidden: true,
+    onopen(response) {
+      if (response.ok) return;
+      throw new Error(`HTTP ${response.status}`);
+    },
+    onmessage(ev) {
+      let data = {};
+      try {
+        data = JSON.parse(ev.data || '{}');
+      } catch {
+        data = {};
+      }
+      onEvent?.(ev.event, data);
+    },
+    onerror(err) {
+      onError?.(err);
+      throw err; // 抛错以停止自动重连，交给上层降级处理
+    },
+    onclose() {
+      onClose?.();
+    },
+  });
+  return controller;
+}

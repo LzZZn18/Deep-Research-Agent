@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { startResearchAsync, resumeTaskAsync } from './lib/sse.js';
+import { startResearchAsync, resumeTaskAsync, subscribeEvents } from './lib/sse.js';
 import { exportWord, exportPdf } from './lib/export.js';
 import MarkdownView from './components/MarkdownView.vue';
 
@@ -47,6 +47,7 @@ const stages = ref([
 const elapsed = ref(0);
 let timerId = null;
 let pollTimer = null;
+let sseController = null;
 let cancelled = false;
 let currentTaskId = null;
 let streamBuf = '';
@@ -203,6 +204,7 @@ function allResearchersDone() {
 
 function reset() {
   stopPolling();
+  stopSSE();
   error.value = '';
   notice.value = '';
   plan.value = null;
@@ -270,6 +272,7 @@ function makeHandlers() {
       currentTaskId = d.task_id;
       loadTasks();
     },
+    snapshot: (d) => applySnapshot(d),
     plan_start: () => setStage('planning', 'active'),
     plan: (d) => {
       plan.value = d;
@@ -343,17 +346,20 @@ function makeHandlers() {
       setStage('done', 'done');
       running.value = false;
       stopTimer();
+      stopSSE();
       loadTasks();
     },
     error: (d) => {
       if (!cancelled) error.value = d.message || '出错了';
       running.value = false;
       stopTimer();
+      stopSSE();
       loadTasks();
     },
     close: () => {
       running.value = false;
       stopTimer();
+      stopSSE();
     },
   };
 }
@@ -362,6 +368,13 @@ function stopPolling() {
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
+  }
+}
+
+function stopSSE() {
+  if (sseController) {
+    sseController.abort();
+    sseController = null;
   }
 }
 
@@ -438,6 +451,20 @@ function startPolling(taskId) {
   pollTimer = setInterval(tick, 1500);
 }
 
+function startSSE(taskId) {
+  stopPolling();
+  stopSSE();
+  const handlers = makeHandlers();
+  sseController = subscribeEvents(taskId, {
+    onEvent: (event, data) => handlers[event]?.(data),
+    onError: () => {
+      // SSE 断线：降级为轮询兜底，保证最终状态能拉到
+      if (!cancelled && currentTaskId != null) startPolling(currentTaskId);
+    },
+    onClose: () => {},
+  });
+}
+
 async function findDuplicate(q) {
   try {
     const res = await fetch(`/api/tasks/lookup?question=${encodeURIComponent(q)}`);
@@ -469,7 +496,7 @@ async function submit() {
   try {
     const { task_id } = await startResearchAsync(q);
     currentTaskId = task_id;
-    startPolling(task_id);
+    startSSE(task_id);
   } catch (e) {
     running.value = false;
     stopTimer();
@@ -490,7 +517,7 @@ async function resume(id) {
   try {
     await resumeTaskAsync(id);
     currentTaskId = id;
-    startPolling(id);
+    startSSE(id);
   } catch (e) {
     running.value = false;
     stopTimer();
@@ -506,6 +533,7 @@ function primaryAction() {
 function cancel() {
   cancelled = true;
   stopPolling();
+  stopSSE();
   if (currentTaskId != null) {
     fetch(`/api/tasks/${currentTaskId}/cancel`, { method: 'POST' }).catch(() => {});
     resumeTargetId.value = currentTaskId;

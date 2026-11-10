@@ -134,12 +134,12 @@ class VectorStore:
             conn.execute("ALTER TABLE task_checkpoint ADD COLUMN IF NOT EXISTS critic_rounds TEXT")
             conn.commit()
 
-    def create_task(self, question: str) -> int:
-        """创建研究任务，返回 task_id。"""
+    def create_task(self, question: str, status: str = "running") -> int:
+        """创建研究任务，返回 task_id（可指定初始状态，如入队前 pending）。"""
         with self._connect() as conn:
             row = conn.execute(
-                "INSERT INTO research_task (question) VALUES (%s) RETURNING id",
-                (question,),
+                "INSERT INTO research_task (question, status) VALUES (%s, %s) RETURNING id",
+                (question, status),
             ).fetchone()
             conn.commit()
         return row[0]
@@ -371,6 +371,27 @@ class VectorStore:
 
     def finish_task(self, task_id: int, status: str = "done") -> None:
         self.set_task_status(task_id, status)
+
+    def finish_if_running(self, task_id: int, status: str = "done") -> None:
+        """仅当任务仍为 running 时才更新状态（避免覆盖已取消的任务）。"""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE research_task SET status = %s, updated_at = now() "
+                "WHERE id = %s AND status = 'running'",
+                (status, task_id),
+            )
+            conn.commit()
+
+    def start_if_pending(self, task_id: int) -> bool:
+        """仅当任务仍为 pending 时才置为 running；已被取消则返回 False。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "UPDATE research_task SET status = 'running', updated_at = now() "
+                "WHERE id = %s AND status = 'pending' RETURNING id",
+                (task_id,),
+            ).fetchone()
+            conn.commit()
+        return row is not None
 
     def save_checkpoint(
         self,

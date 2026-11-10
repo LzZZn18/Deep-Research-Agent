@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # PostgreSQL (pgvector)
     db_url: str = "postgresql://deepsearch:deepsearch@localhost:5432/deepsearch"
 
+    # Redis（任务队列）
+    redis_url: str = "redis://localhost:6379/0"
+
     # Embedding（本地 BGE）
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
     embedding_dim: int = 512

@@ -17,6 +17,18 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    container_name: deepsearch-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build: ./backend
     container_name: deepsearch-backend
@@ -24,10 +36,13 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      # 容器内通过服务名访问 db，不能用 localhost
+      # 容器内通过服务名访问 db / redis，不能用 localhost
       DB_URL: postgresql://deepsearch:deepsearch@db:5432/deepsearch
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -40,6 +55,24 @@ services:
       timeout: 5s
       retries: 10
       start_period: 60s
+
+  worker:
+    build: ./backend
+    container_name: deepsearch-worker
+    restart: unless-stopped
+    command: python -m app.worker
+    env_file:
+      - ./backend/.env
+    environment:
+      DB_URL: postgresql://deepsearch:deepsearch@db:5432/deepsearch
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - embedding-cache:/root/.cache
 
   frontend:
     build: ./frontend

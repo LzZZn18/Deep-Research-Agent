@@ -59,3 +59,31 @@ export function resumeTask(taskId, handlers) {
   });
   return controller;
 }
+
+/**
+ * 提交研究（非流式）：建任务并入队，立即返回 { task_id, job_id }。
+ */
+export async function startResearchAsync(question) {
+  const res = await fetch('/api/research', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * 续跑任务（非流式）：重新入队，立即返回 { task_id, job_id }。
+ */
+export async function resumeTaskAsync(taskId) {
+  const res = await fetch(`/api/tasks/${taskId}/resume`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}

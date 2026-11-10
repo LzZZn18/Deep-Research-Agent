@@ -6,3 +6,5 @@ pydantic-settings>=2.2
 psycopg[binary]>=3.2
 trafilatura>=1.12
 fastembed>=0.4
+arq>=0.26
+redis>=5.0

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { startResearch, resumeTask } from './lib/sse.js';
+import { startResearchAsync, resumeTaskAsync } from './lib/sse.js';
 import { exportWord, exportPdf } from './lib/export.js';
 import MarkdownView from './components/MarkdownView.vue';
 
@@ -46,7 +46,7 @@ const stages = ref([
 
 const elapsed = ref(0);
 let timerId = null;
-let controller = null;
+let pollTimer = null;
 let cancelled = false;
 let currentTaskId = null;
 let streamBuf = '';
@@ -158,7 +158,11 @@ function statusLabel(s) {
 }
 
 function taskStatusText(s) {
-  return s === 'done' ? '完成' : s === 'failed' ? '失败' : s === 'cancelled' ? '已取消' : '进行中';
+  return s === 'done' ? '完成'
+    : s === 'failed' ? '失败'
+    : s === 'cancelled' ? '已取消'
+    : s === 'pending' ? '排队中'
+    : '进行中';
 }
 
 function fmtDate(iso) {
@@ -198,6 +202,7 @@ function allResearchersDone() {
 }
 
 function reset() {
+  stopPolling();
   error.value = '';
   notice.value = '';
   plan.value = null;
@@ -353,6 +358,86 @@ function makeHandlers() {
   };
 }
 
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function applyStageToStepper(stage) {
+  resetStages();
+  if (stage === 'planned') {
+    setStage('planning', 'done');
+    setStage('researching', 'active');
+  } else if (stage === 'researched') {
+    setStage('planning', 'done');
+    setStage('researching', 'done');
+    setStage('writing', 'active');
+  } else if (stage === 'writing') {
+    setStage('planning', 'done');
+    setStage('researching', 'done');
+    setStage('writing', 'done');
+    setStage('critiquing', 'active');
+  }
+}
+
+function applySnapshot(t) {
+  if (!t) return;
+  plan.value = t.plan && Object.keys(t.plan).length ? t.plan : null;
+  simpleMode.value = t.plan?.complexity === 'simple';
+  const researched = t.stage === 'researched' || t.stage === 'writing';
+  researchers.value = (t.plan?.sub_questions || []).map((sq, i) => ({
+    index: i,
+    sub_question: sq,
+    status: researched ? 'done' : 'pending',
+  }));
+  criticRounds.value = t.critic_rounds || [];
+  toolLogs.value = (t.trace || [])
+    .filter((x) => x.kind === 'tool')
+    .map((x) => `▸ ${x.name}(${x.input_preview || ''})\n  ${x.output_preview || ''}`);
+  if (t.stats) stats.value = t.stats;
+  if (t.report) {
+    streamBuf = '';
+    streamPending = false;
+    report.value = t.report;
+  }
+  applyStageToStepper(t.stage);
+
+  if (t.status === 'done') {
+    setStage('planning', 'done');
+    setStage('researching', 'done');
+    setStage('writing', 'done');
+    setStage('critiquing', 'done');
+    setStage('done', 'done');
+    running.value = false;
+    stopTimer();
+    stopPolling();
+    loadTasks();
+  } else if (t.status === 'failed') {
+    if (!cancelled) error.value = '研究失败，可点击「继续研究」从断点恢复';
+    running.value = false;
+    stopTimer();
+    stopPolling();
+    loadTasks();
+  }
+}
+
+function startPolling(taskId) {
+  stopPolling();
+  const tick = async () => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`);
+      if (!res.ok) return;
+      applySnapshot(await res.json());
+    } catch {
+      // 静默失败，下一轮重试
+    }
+  };
+  tick();
+  pollTimer = setInterval(tick, 1500);
+}
+
 async function findDuplicate(q) {
   try {
     const res = await fetch(`/api/tasks/lookup?question=${encodeURIComponent(q)}`);
@@ -381,10 +466,19 @@ async function submit() {
   reset();
   running.value = true;
   startTimer();
-  controller = startResearch(q, makeHandlers());
+  try {
+    const { task_id } = await startResearchAsync(q);
+    currentTaskId = task_id;
+    startPolling(task_id);
+  } catch (e) {
+    running.value = false;
+    stopTimer();
+    error.value = e.message || '提交失败';
+    loadTasks();
+  }
 }
 
-function resume(id) {
+async function resume(id) {
   if (running.value) return;
   const t = tasks.value.find((x) => x.id === id);
   resumeTargetId.value = null;
@@ -393,7 +487,15 @@ function resume(id) {
   view.value = 'new';
   running.value = true;
   startTimer();
-  controller = resumeTask(id, makeHandlers());
+  try {
+    await resumeTaskAsync(id);
+    currentTaskId = id;
+    startPolling(id);
+  } catch (e) {
+    running.value = false;
+    stopTimer();
+    error.value = e.message || '续跑失败';
+  }
 }
 
 function primaryAction() {
@@ -403,12 +505,15 @@ function primaryAction() {
 
 function cancel() {
   cancelled = true;
-  controller?.abort();
+  stopPolling();
+  if (currentTaskId != null) {
+    fetch(`/api/tasks/${currentTaskId}/cancel`, { method: 'POST' }).catch(() => {});
+    resumeTargetId.value = currentTaskId;
+  }
   running.value = false;
   stopTimer();
   error.value = '';
   notice.value = '已取消';
-  if (currentTaskId != null) resumeTargetId.value = currentTaskId;
   // 等后端把状态标成 cancelled 后再刷新历史列表
   setTimeout(loadTasks, 500);
 }

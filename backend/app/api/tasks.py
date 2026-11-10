@@ -2,6 +2,8 @@ import asyncio
 import json
 from functools import lru_cache
 
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -17,6 +19,19 @@ from app.tools.search import SearchTool
 from app.tools.vector_search import VectorSearchTool
 
 router = APIRouter()
+
+_redis_pool = None
+_redis_lock = asyncio.Lock()
+
+
+async def _get_redis(settings: Settings):
+    """懒加载的 arq Redis 连接池（进程内复用）。"""
+    global _redis_pool
+    if _redis_pool is None:
+        async with _redis_lock:
+            if _redis_pool is None:
+                _redis_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    return _redis_pool
 
 
 def _sse(event: str, data: dict) -> str:
@@ -124,38 +139,18 @@ def _stream(run_body) -> StreamingResponse:
 
 @router.post("/research")
 async def research(req: ResearchRequest, settings: Settings = Depends(get_settings)):
-    provider = _make_provider(settings)
+    if not settings.deepseek_api_key:
+        raise HTTPException(status_code=400, detail="DEEPSEEK_API_KEY 未配置，请在 backend/.env 中填写")
+    if not settings.tavily_api_key:
+        raise HTTPException(status_code=400, detail="TAVILY_API_KEY 未配置，请在 backend/.env 中填写")
+
     store = get_store()
-    embedder = get_embedder()
+    await asyncio.to_thread(store.init_schema)
+    task_id = await asyncio.to_thread(store.create_task, req.question, "pending")
 
-    async def run_body(emit: EmitFn) -> None:
-        task_id = None
-        if not settings.deepseek_api_key:
-            await emit("error", {"message": "DEEPSEEK_API_KEY 未配置，请在 backend/.env 中填写"})
-            return
-        if not settings.tavily_api_key:
-            await emit("error", {"message": "TAVILY_API_KEY 未配置，请在 backend/.env 中填写"})
-            return
-        await asyncio.to_thread(store.init_schema)
-        task_id = await asyncio.to_thread(store.create_task, req.question)
-        await emit("task_start", {"question": req.question, "task_id": task_id})
-        try:
-            await _execute_research(settings, store, embedder, provider, task_id, req.question, emit)
-        except asyncio.CancelledError:
-            if task_id is not None:
-                asyncio.get_running_loop().run_in_executor(
-                    None, store.finish_task, task_id, "cancelled"
-                )
-            raise
-        except Exception as e:
-            if task_id is not None:
-                try:
-                    await asyncio.to_thread(store.finish_task, task_id, "failed")
-                except Exception:
-                    pass
-            await emit("error", {"message": str(e)})
-
-    return _stream(run_body)
+    redis = await _get_redis(settings)
+    job = await redis.enqueue_job("run_research_task", task_id, req.question)
+    return {"task_id": task_id, "job_id": job.job_id}
 
 
 @router.post("/tasks/{task_id}/resume")
@@ -163,38 +158,33 @@ async def resume(task_id: int, settings: Settings = Depends(get_settings)):
     store = get_store()
     await asyncio.to_thread(store.init_schema)
 
-    # 校验：任务存在、未完成、且存在可恢复的检查点
+    # 校验：任务存在、未完成/未在跑、且存在可恢复的检查点
     task = await asyncio.to_thread(store.get_task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
     if task["status"] == "done":
         raise HTTPException(status_code=409, detail="任务已完成，无需续跑")
+    if task["status"] in ("pending", "running"):
+        raise HTTPException(status_code=409, detail="任务正在进行中，无需续跑")
     cp = await asyncio.to_thread(store.load_checkpoint, task_id)
     if cp is None:
         raise HTTPException(status_code=400, detail="该任务没有可恢复的检查点")
 
-    provider = _make_provider(settings)
-    embedder = get_embedder()
-    question = task["question"]
+    await asyncio.to_thread(store.set_task_status, task_id, "pending")
+    redis = await _get_redis(settings)
+    job = await redis.enqueue_job("run_research_task", task_id, task["question"])
+    return {"task_id": task_id, "job_id": job.job_id}
 
-    async def run_body(emit: EmitFn) -> None:
-        await asyncio.to_thread(store.set_task_status, task_id, "running")
-        await emit("task_start", {"question": question, "task_id": task_id})
-        try:
-            await _execute_research(settings, store, embedder, provider, task_id, question, emit)
-        except asyncio.CancelledError:
-            asyncio.get_running_loop().run_in_executor(
-                None, store.finish_task, task_id, "cancelled"
-            )
-            raise
-        except Exception as e:
-            try:
-                await asyncio.to_thread(store.finish_task, task_id, "failed")
-            except Exception:
-                pass
-            await emit("error", {"message": str(e)})
 
-    return _stream(run_body)
+@router.post("/tasks/{task_id}/cancel")
+async def cancel(task_id: int):
+    store = get_store()
+    await asyncio.to_thread(store.init_schema)
+    task = await asyncio.to_thread(store.get_task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    await asyncio.to_thread(store.set_task_status, task_id, "cancelled")
+    return {"status": "cancelled"}
 
 
 @router.get("/tasks")

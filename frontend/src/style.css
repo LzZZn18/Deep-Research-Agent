@@ -608,6 +608,9 @@ textarea:focus {
 .history-head {
   margin-bottom: 20px;
 }
+.history-head .btn-primary {
+  margin-top: 14px;
+}
 .history-head h1 {
   font-size: 22px;
   line-height: 1.4;

@@ -5,6 +5,7 @@ from functools import lru_cache
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from app.agent.loop import EmitFn
 from app.agent.orchestrator import run_deep_research
 from app.core.config import Settings, get_settings
 from app.core.llm.deepseek import DeepSeekProvider
@@ -34,85 +35,72 @@ def get_store() -> VectorStore:
     return VectorStore(s.db_url, s.embedding_dim)
 
 
-@router.post("/research")
-async def research(req: ResearchRequest, settings: Settings = Depends(get_settings)):
-    provider = DeepSeekProvider(
+def _make_provider(settings: Settings) -> DeepSeekProvider:
+    return DeepSeekProvider(
         api_key=settings.deepseek_api_key,
         base_url=settings.deepseek_base_url,
         model=settings.deepseek_model,
         timeout=settings.llm_timeout,
         retries=settings.llm_retries,
     )
-    store = get_store()
-    embedder = get_embedder()
+
+
+async def _execute_research(
+    settings: Settings,
+    store: VectorStore,
+    embedder: FastEmbedEmbedder,
+    provider: DeepSeekProvider,
+    task_id: int,
+    question: str,
+    emit: EmitFn,
+) -> None:
+    """执行一次研究：装配工具 → 跑流水线 → 落库 → 推送结果。新建与续跑共用。"""
+    tools = [
+        SearchTool(api_key=settings.tavily_api_key),
+        FetchTool(store=store, embedder=embedder, task_id=task_id),
+        VectorSearchTool(store=store, embedder=embedder, task_id=task_id),
+    ]
+    try:
+        content = await asyncio.wait_for(
+            run_deep_research(
+                provider=provider,
+                store=store,
+                tools=tools,
+                question=question,
+                task_id=task_id,
+                max_sub_questions=settings.max_sub_questions,
+                max_critic_rounds=settings.max_critic_rounds,
+                researcher_steps=settings.researcher_steps,
+                emit=emit,
+            ),
+            timeout=settings.task_timeout,
+        )
+    except asyncio.TimeoutError:
+        await asyncio.to_thread(store.finish_task, task_id, "failed")
+        await emit("error", {"message": f"研究超时（超过 {settings.task_timeout:g}s），已自动中止"})
+        return
+    await asyncio.to_thread(store.save_report, task_id, content)
+    await asyncio.to_thread(store.finish_task, task_id, "done")
+    await emit("answer", {"content": content})
+    await emit("task_end", {})
+
+
+def _stream(run_body) -> StreamingResponse:
+    """把 run_body(emit) 包装成 SSE 流：负责队列、客户端断连时的取消。"""
 
     queue: asyncio.Queue = asyncio.Queue()
 
     async def emit(event: str, data: dict) -> None:
         await queue.put((event, data))
 
-    async def run() -> None:
-        task_id = None
+    async def producer() -> None:
         try:
-            if not settings.deepseek_api_key:
-                await emit("error", {"message": "DEEPSEEK_API_KEY 未配置，请在 backend/.env 中填写"})
-                return
-            if not settings.tavily_api_key:
-                await emit("error", {"message": "TAVILY_API_KEY 未配置，请在 backend/.env 中填写"})
-                return
-            await asyncio.to_thread(store.init_schema)
-            task_id = await asyncio.to_thread(store.create_task, req.question)
-            tools = [
-                SearchTool(api_key=settings.tavily_api_key),
-                FetchTool(store=store, embedder=embedder, task_id=task_id),
-                VectorSearchTool(store=store, embedder=embedder, task_id=task_id),
-            ]
-            await emit("task_start", {"question": req.question, "task_id": task_id})
-            try:
-                content = await asyncio.wait_for(
-                    run_deep_research(
-                        provider=provider,
-                        store=store,
-                        tools=tools,
-                        question=req.question,
-                        task_id=task_id,
-                        max_sub_questions=settings.max_sub_questions,
-                        max_critic_rounds=settings.max_critic_rounds,
-                        researcher_steps=settings.researcher_steps,
-                        emit=emit,
-                    ),
-                    timeout=settings.task_timeout,
-                )
-            except asyncio.TimeoutError:
-                await asyncio.to_thread(store.finish_task, task_id, "failed")
-                await emit(
-                    "error",
-                    {"message": f"研究超时（超过 {settings.task_timeout:g}s），已自动中止"},
-                )
-                return
-            await asyncio.to_thread(store.save_report, task_id, content)
-            await asyncio.to_thread(store.finish_task, task_id, "done")
-            await emit("answer", {"content": content})
-            await emit("task_end", {})
-        except asyncio.CancelledError:
-            if task_id is not None:
-                # 协程已被取消，不能再 await；用线程池把任务标记为“已取消”
-                asyncio.get_running_loop().run_in_executor(
-                    None, store.finish_task, task_id, "cancelled"
-                )
-            raise
-        except Exception as e:
-            if task_id is not None:
-                try:
-                    await asyncio.to_thread(store.finish_task, task_id, "failed")
-                except Exception:
-                    pass
-            await emit("error", {"message": str(e)})
+            await run_body(emit)
         finally:
             await queue.put(None)
 
     async def event_stream():
-        task = asyncio.create_task(run())
+        task = asyncio.create_task(producer())
         try:
             while True:
                 item = await queue.get()
@@ -134,6 +122,81 @@ async def research(req: ResearchRequest, settings: Settings = Depends(get_settin
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
 
 
+@router.post("/research")
+async def research(req: ResearchRequest, settings: Settings = Depends(get_settings)):
+    provider = _make_provider(settings)
+    store = get_store()
+    embedder = get_embedder()
+
+    async def run_body(emit: EmitFn) -> None:
+        task_id = None
+        if not settings.deepseek_api_key:
+            await emit("error", {"message": "DEEPSEEK_API_KEY 未配置，请在 backend/.env 中填写"})
+            return
+        if not settings.tavily_api_key:
+            await emit("error", {"message": "TAVILY_API_KEY 未配置，请在 backend/.env 中填写"})
+            return
+        await asyncio.to_thread(store.init_schema)
+        task_id = await asyncio.to_thread(store.create_task, req.question)
+        await emit("task_start", {"question": req.question, "task_id": task_id})
+        try:
+            await _execute_research(settings, store, embedder, provider, task_id, req.question, emit)
+        except asyncio.CancelledError:
+            if task_id is not None:
+                asyncio.get_running_loop().run_in_executor(
+                    None, store.finish_task, task_id, "cancelled"
+                )
+            raise
+        except Exception as e:
+            if task_id is not None:
+                try:
+                    await asyncio.to_thread(store.finish_task, task_id, "failed")
+                except Exception:
+                    pass
+            await emit("error", {"message": str(e)})
+
+    return _stream(run_body)
+
+
+@router.post("/tasks/{task_id}/resume")
+async def resume(task_id: int, settings: Settings = Depends(get_settings)):
+    store = get_store()
+    await asyncio.to_thread(store.init_schema)
+
+    # 校验：任务存在、未完成、且存在可恢复的检查点
+    task = await asyncio.to_thread(store.get_task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if task["status"] == "done":
+        raise HTTPException(status_code=409, detail="任务已完成，无需续跑")
+    cp = await asyncio.to_thread(store.load_checkpoint, task_id)
+    if cp is None:
+        raise HTTPException(status_code=400, detail="该任务没有可恢复的检查点")
+
+    provider = _make_provider(settings)
+    embedder = get_embedder()
+    question = task["question"]
+
+    async def run_body(emit: EmitFn) -> None:
+        await asyncio.to_thread(store.set_task_status, task_id, "running")
+        await emit("task_start", {"question": question, "task_id": task_id})
+        try:
+            await _execute_research(settings, store, embedder, provider, task_id, question, emit)
+        except asyncio.CancelledError:
+            asyncio.get_running_loop().run_in_executor(
+                None, store.finish_task, task_id, "cancelled"
+            )
+            raise
+        except Exception as e:
+            try:
+                await asyncio.to_thread(store.finish_task, task_id, "failed")
+            except Exception:
+                pass
+            await emit("error", {"message": str(e)})
+
+    return _stream(run_body)
+
+
 @router.get("/tasks")
 async def list_tasks():
     store = get_store()
@@ -150,4 +213,9 @@ async def get_task(task_id: int):
         raise HTTPException(status_code=404, detail="任务不存在")
     task["stats"] = await asyncio.to_thread(store.task_stats, task_id)
     task["trace"] = await asyncio.to_thread(store.list_trace, task_id)
+    cp = await asyncio.to_thread(store.load_checkpoint, task_id)
+    task["plan"] = cp.get("plan") if cp else {}
+    task["findings"] = cp.get("findings") if cp else []
+    task["critic_rounds"] = cp.get("critic_rounds") if cp else []
+    task["stage"] = cp.get("stage") if cp else None
     return task

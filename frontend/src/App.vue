@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { startResearch } from './lib/sse.js';
+import { startResearch, resumeTask } from './lib/sse.js';
 import { exportWord, exportPdf } from './lib/export.js';
 import MarkdownView from './components/MarkdownView.vue';
 
@@ -21,6 +21,7 @@ const showStats = ref(false);
 const view = ref('new');
 const tasks = ref([]);
 const currentTask = ref(null);
+const resumeTargetId = ref(null);
 
 function emptyStats() {
   return {
@@ -47,6 +48,7 @@ const elapsed = ref(0);
 let timerId = null;
 let controller = null;
 let cancelled = false;
+let currentTaskId = null;
 let streamBuf = '';
 let streamPending = false;
 
@@ -68,6 +70,56 @@ const byAgentRows = computed(() => {
     duration_ms: v.duration_ms,
     calls: v.calls,
   }));
+});
+
+// —— 历史详情：用后端读回的过程数据重现「研究时的画面」 ——
+const historyPlan = computed(() => currentTask.value?.plan || null);
+const historySimpleMode = computed(() => historyPlan.value?.complexity === 'simple');
+const historySubQuestions = computed(() => historyPlan.value?.sub_questions || []);
+const historyResearchers = computed(() =>
+  historySubQuestions.value.map((sq, i) => ({ index: i, sub_question: sq, status: 'done' }))
+);
+const historyCriticRounds = computed(() => currentTask.value?.critic_rounds || []);
+const historyToolLogs = computed(() => {
+  const logs = [];
+  for (const t of currentTask.value?.trace || []) {
+    if (t.kind !== 'tool') continue;
+    logs.push(`▸ ${t.name}(${t.input_preview || ''})\n  ${t.output_preview || ''}`);
+  }
+  return logs;
+});
+
+// 历史详情的进度条：按 status + stage 回退到「当时中断的状态」
+const historyStages = computed(() => {
+  const status = currentTask.value?.status;
+  const stage = currentTask.value?.stage;
+  const s = {
+    planning: 'pending',
+    researching: 'pending',
+    writing: 'pending',
+    critiquing: 'pending',
+    done: 'pending',
+  };
+  if (status === 'done') {
+    for (const k of Object.keys(s)) s[k] = 'done';
+    return s;
+  }
+  if (stage === 'planned') {
+    s.planning = 'done';
+    s.researching = 'active';
+  } else if (stage === 'researched') {
+    s.planning = 'done';
+    s.researching = 'done';
+    s.writing = 'active';
+  } else if (stage === 'writing') {
+    s.planning = 'done';
+    s.researching = 'done';
+    s.writing = 'done';
+    s.critiquing = 'active';
+  } else {
+    s.planning = 'active';
+  }
+  return s;
 });
 
 function setStage(key, status) {
@@ -204,17 +256,15 @@ function newResearch() {
   if (!running.value) reset();
   view.value = 'new';
   currentTask.value = null;
+  resumeTargetId.value = null;
 }
 
-async function submit() {
-  const q = question.value.trim();
-  if (!q || running.value) return;
-  reset();
-  running.value = true;
-  startTimer();
-
-  controller = startResearch(q, {
-    task_start: () => loadTasks(),
+function makeHandlers() {
+  return {
+    task_start: (d) => {
+      currentTaskId = d.task_id;
+      loadTasks();
+    },
     plan_start: () => setStage('planning', 'active'),
     plan: (d) => {
       plan.value = d;
@@ -300,7 +350,34 @@ async function submit() {
       running.value = false;
       stopTimer();
     },
-  });
+  };
+}
+
+async function submit() {
+  const q = question.value.trim();
+  if (!q || running.value) return;
+  resumeTargetId.value = null;
+  reset();
+  running.value = true;
+  startTimer();
+  controller = startResearch(q, makeHandlers());
+}
+
+function resume(id) {
+  if (running.value) return;
+  const t = tasks.value.find((x) => x.id === id);
+  resumeTargetId.value = null;
+  reset();
+  if (t) question.value = t.question;
+  view.value = 'new';
+  running.value = true;
+  startTimer();
+  controller = resumeTask(id, makeHandlers());
+}
+
+function primaryAction() {
+  if (resumeTargetId.value) resume(resumeTargetId.value);
+  else submit();
 }
 
 function cancel() {
@@ -310,6 +387,7 @@ function cancel() {
   stopTimer();
   error.value = '';
   notice.value = '已取消';
+  if (currentTaskId != null) resumeTargetId.value = currentTaskId;
   // 等后端把状态标成 cancelled 后再刷新历史列表
   setTimeout(loadTasks, 500);
 }
@@ -366,11 +444,12 @@ onMounted(loadTasks);
             <textarea
               v-model="question"
               placeholder="输入你的研究问题…（Ctrl+Enter 提交）"
-              @keydown.ctrl.enter="submit"
+              @keydown.ctrl.enter="primaryAction"
+              @input="resumeTargetId = null"
             ></textarea>
             <div class="input-actions">
-              <button class="btn-primary" @click="submit" :disabled="running">
-                {{ running ? '研究中…' : '开始研究' }}
+              <button class="btn-primary" @click="primaryAction" :disabled="running">
+                {{ running ? '研究中…' : (resumeTargetId ? '继续研究' : '开始研究') }}
               </button>
               <button v-if="running" class="btn-ghost" @click="cancel">取消</button>
             </div>
@@ -445,7 +524,73 @@ onMounted(loadTasks);
               {{ currentTask ? fmtDate(currentTask.created_at) : '' }}
               · {{ currentTask ? taskStatusText(currentTask.status) : '' }}
             </p>
+            <button
+              v-if="currentTask && (currentTask.status === 'failed' || currentTask.status === 'cancelled')"
+              class="btn-primary"
+              @click="resume(currentTask.id)"
+            >
+              ↻ 继续研究
+            </button>
           </div>
+
+          <section v-if="historyPlan && !historySimpleMode" class="card">
+            <div class="stepper-row">
+              <div class="stepper-track">
+                <template v-for="(s, i) in stages" :key="s.key">
+                  <div class="step" :class="historyStages[s.key]">
+                    <div class="step-dot">
+                      <span v-if="historyStages[s.key] === 'done'">✓</span>
+                      <span v-else>{{ i + 1 }}</span>
+                    </div>
+                    <div class="step-label">{{ s.label }}</div>
+                  </div>
+                  <div
+                    v-if="i < stages.length - 1"
+                    class="step-line"
+                    :class="{ done: historyStages[s.key] === 'done' }"
+                  ></div>
+                </template>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="historyPlan" class="card">
+            <h2 class="card-title"><span class="icon">📋</span> 研究计划</h2>
+            <p v-if="historySimpleMode" class="muted">简单问题，直接回答</p>
+            <ul v-else class="plan-list">
+              <li v-for="(sq, i) in historySubQuestions" :key="i" class="plan-item">
+                <span class="idx">{{ String(i + 1).padStart(2, '0') }}</span>
+                <span>{{ sq }}</span>
+              </li>
+            </ul>
+          </section>
+
+          <section v-if="historyResearchers.length" class="card">
+            <h2 class="card-title"><span class="icon">🔍</span> 研究员</h2>
+            <div v-for="r in historyResearchers" :key="r.index" class="agent-row">
+              <span class="dot done"></span>
+              <span class="agent-q">{{ r.sub_question }}</span>
+              <span class="agent-state">完成</span>
+            </div>
+          </section>
+
+          <section v-if="historyCriticRounds.length" class="card">
+            <h2 class="card-title"><span class="icon">✅</span> 审核</h2>
+            <div v-for="c in historyCriticRounds" :key="c.round" class="critic-row">
+              <span class="round">第 {{ c.round }} 轮</span>
+              <span class="badge" :class="c.approved ? 'ok' : 'fail'">
+                {{ c.approved ? '通过' : '打回' }}
+              </span>
+              <span v-if="!c.approved && c.feedback" class="feedback">{{ c.feedback }}</span>
+            </div>
+          </section>
+
+          <section v-if="historyToolLogs.length" class="card">
+            <button class="log-toggle" @click="showTools = !showTools">
+              {{ showTools ? '▾' : '▸' }} 工具日志 · {{ historyToolLogs.length }}
+            </button>
+            <pre v-if="showTools" class="log-panel">{{ historyToolLogs.join('\n') }}</pre>
+          </section>
         </template>
 
         <section v-if="activeStats && activeStats.calls" class="card stats-card">

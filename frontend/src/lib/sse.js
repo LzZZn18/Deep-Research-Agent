@@ -1,18 +1,7 @@
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 
-/**
- * 发起一次深度研究（POST + SSE 流式）。
- * @param {string} question
- * @param {Record<string, (data: any) => void>} handlers  按事件名分发
- * @returns {AbortController} 用于取消
- */
-export function startResearch(question, handlers) {
-  const controller = new AbortController();
-  fetchEventSource('/api/research', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question }),
-    signal: controller.signal,
+function buildHandlers(handlers) {
+  return {
     openWhenHidden: true,
     onopen(response) {
       if (response.ok) return;
@@ -34,6 +23,39 @@ export function startResearch(question, handlers) {
     onclose() {
       handlers.close?.();
     },
+  };
+}
+
+/**
+ * 发起一次深度研究（POST + SSE 流式）。
+ * @param {string} question
+ * @param {Record<string, (data: any) => void>} handlers  按事件名分发
+ * @returns {AbortController} 用于取消
+ */
+export function startResearch(question, handlers) {
+  const controller = new AbortController();
+  fetchEventSource('/api/research', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+    signal: controller.signal,
+    ...buildHandlers(handlers),
+  });
+  return controller;
+}
+
+/**
+ * 从断点续跑一个任务（POST + SSE 流式）。
+ * @param {number|string} taskId
+ * @param {Record<string, (data: any) => void>} handlers
+ * @returns {AbortController}
+ */
+export function resumeTask(taskId, handlers) {
+  const controller = new AbortController();
+  fetchEventSource(`/api/tasks/${taskId}/resume`, {
+    method: 'POST',
+    signal: controller.signal,
+    ...buildHandlers(handlers),
   });
   return controller;
 }

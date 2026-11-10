@@ -134,13 +134,25 @@ async def run_deep_research(
     researcher_steps: int,
     emit: EmitFn | None = None,
 ) -> str:
-    """多智能体深度研究：Planner → 并行 Researcher → Writer ⇄ Critic。"""
+    """多智能体深度研究：Planner → 并行 Researcher → Writer ⇄ Critic。
+
+    支持断点恢复：每个阶段完成后把中间产物写入 task_checkpoint，
+    恢复时读取检查点跳过已完成阶段，最多重复一次在跑的 LLM 调用。
+    """
     if emit:
         await emit("plan_start", {})
 
     model = getattr(provider, "model", "")
     token_budget = get_settings().token_budget
-    used_tokens = 0
+
+    cp = await asyncio.to_thread(store.load_checkpoint, task_id)
+    stage = cp["stage"] if cp else "created"
+    plan: dict = cp.get("plan") if cp else {}
+    findings: list = cp.get("findings") if cp else []
+    draft: str = cp.get("draft") if cp else ""
+    critic_round: int = cp.get("critic_round") if cp else 0
+    critic_rounds: list = cp.get("critic_rounds") if cp else []
+    used_tokens: int = cp.get("used_tokens") if cp else 0
 
     async def record(ev: dict) -> None:
         """把一次 LLM/工具调用记入 trace：算成本 → 实时推送 → 落库。"""
@@ -169,9 +181,15 @@ async def run_deep_research(
             ev.get("duration_ms", 0),
         )
 
-    # 1. Planner：判断复杂度 + 拆子问题
-    plan_text = await _chat(provider, PLANNER_PROMPT, question, trace=record, label="planner")
-    plan = _extract_json(plan_text)
+    # 1. Planner：判断复杂度 + 拆子问题（已完成则从检查点恢复）
+    if stage == "created":
+        plan_text = await _chat(provider, PLANNER_PROMPT, question, trace=record, label="planner")
+        plan = _extract_json(plan_text)
+        await asyncio.to_thread(
+            store.save_checkpoint, task_id, "planned",
+            plan=plan, critic_rounds=critic_rounds, used_tokens=used_tokens,
+        )
+
     complexity = plan.get("complexity", "research")  # 默认 research（安全侧）
     direct_answer = (plan.get("direct_answer") or "").strip()
 
@@ -182,48 +200,68 @@ async def run_deep_research(
     if complexity == "simple" and direct_answer:
         return direct_answer
 
-    # 3. 并行 Researcher
+    # 3. 并行 Researcher（已完成则从检查点恢复）
     sub_questions = (plan.get("sub_questions") or [])[:max_sub_questions]
     if not sub_questions:
         sub_questions = [question]  # 兜底：至少研究原问题
 
-    async def research_one(idx: int, sub_q: str) -> str:
-        if emit:
-            await emit("researcher_start", {"index": idx, "sub_question": sub_q})
-        resp = await run_agent(
-            provider=provider,
-            tools=tools,
-            query=f"请研究以下子问题：{sub_q}",
-            max_steps=researcher_steps,
-            emit=emit,
-            system_prompt=RESEARCHER_PROMPT,
-            trace=record,
-            label=f"researcher-{idx + 1}",
-        )
-        if emit:
-            await emit("researcher_done", {"index": idx, "sub_question": sub_q})
-        return f"## 子问题 {idx + 1}：{sub_q}\n{resp.content.strip()}"
+    if stage in ("created", "planned"):
+        async def research_one(idx: int, sub_q: str) -> str:
+            if emit:
+                await emit("researcher_start", {"index": idx, "sub_question": sub_q})
+            resp = await run_agent(
+                provider=provider,
+                tools=tools,
+                query=f"请研究以下子问题：{sub_q}",
+                max_steps=researcher_steps,
+                emit=emit,
+                system_prompt=RESEARCHER_PROMPT,
+                trace=record,
+                label=f"researcher-{idx + 1}",
+            )
+            if emit:
+                await emit("researcher_done", {"index": idx, "sub_question": sub_q})
+            return f"## 子问题 {idx + 1}：{sub_q}\n{resp.content.strip()}"
 
-    findings = await asyncio.gather(
-        *[research_one(i, q) for i, q in enumerate(sub_questions)]
-    )
+        findings = await asyncio.gather(
+            *[research_one(i, q) for i, q in enumerate(sub_questions)]
+        )
+        await asyncio.to_thread(
+            store.save_checkpoint, task_id, "researched",
+            plan=plan, findings=findings, critic_rounds=critic_rounds, used_tokens=used_tokens,
+        )
+    else:
+        # 恢复：补发 researcher_done 让前端正确显示已完成的研究
+        if emit:
+            for i, q in enumerate(sub_questions):
+                await emit("researcher_done", {"index": i, "sub_question": q})
+
     findings_text = "\n\n".join(findings)
 
-    # 4. 引用表（来自数据库，真实可追溯）
+    # 4. 引用表（来源已在库中，恢复时也能取到）
     citations = await asyncio.to_thread(store.list_task_sources, task_id)
     citations_text = "\n".join(
         f"[{c['citation_id']}] {c['title'] or c['url']} — {c['url']}" for c in citations
     )
 
-    # 5. Writer ⇄ Critic 循环
-    draft, chunks = await _writer_stream(
-        provider,
-        WRITER_PROMPT,
-        _writer_input(question, sub_questions, findings_text, citations_text),
-        trace=record,
-        label="writer",
-    )
-    for r in range(max_critic_rounds):
+    # 5. Writer ⇄ Critic 循环（从检查点的 draft + critic_round 续跑）
+    chunks: list[str] | None = None
+    if stage not in ("writing",):
+        draft, chunks = await _writer_stream(
+            provider,
+            WRITER_PROMPT,
+            _writer_input(question, sub_questions, findings_text, citations_text),
+            trace=record,
+            label="writer",
+        )
+        critic_round = 0
+        await asyncio.to_thread(
+            store.save_checkpoint, task_id, "writing",
+            plan=plan, findings=findings, draft=draft, critic_round=0,
+            critic_rounds=critic_rounds, used_tokens=used_tokens,
+        )
+
+    for r in range(critic_round, max_critic_rounds):
         if emit:
             await emit("critic_start", {"round": r + 1})
         verdict_text = await _chat(
@@ -238,7 +276,13 @@ async def run_deep_research(
         feedback = (verdict.get("feedback") or "").strip()
         if emit:
             await emit("critic_result", {"round": r + 1, "approved": approved, "feedback": feedback})
+        critic_rounds.append({"round": r + 1, "approved": approved, "feedback": feedback})
         if approved:
+            await asyncio.to_thread(
+                store.save_checkpoint, task_id, "writing",
+                plan=plan, findings=findings, draft=draft, critic_round=r + 1,
+                critic_rounds=critic_rounds, used_tokens=used_tokens,
+            )
             break
         if emit:
             await emit("writer_rewrite", {"round": r + 1, "feedback": feedback})
@@ -255,8 +299,14 @@ async def run_deep_research(
             trace=record,
             label="writer",
         )
-    # 审核结束后，才把最终版报告流式推给前端
-    if emit:
+        await asyncio.to_thread(
+            store.save_checkpoint, task_id, "writing",
+            plan=plan, findings=findings, draft=draft, critic_round=r + 1,
+            critic_rounds=critic_rounds, used_tokens=used_tokens,
+        )
+
+    # 审核结束后，才把最终版报告流式推给前端（本次若无新撰写则依赖 answer 事件收尾）
+    if emit and chunks is not None:
         await emit("answer_start", {})
         for chunk in chunks:
             await emit("answer_chunk", {"content": chunk})

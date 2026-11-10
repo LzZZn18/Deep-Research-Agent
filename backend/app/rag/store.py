@@ -1,3 +1,4 @@
+import json
 import re
 import urllib.parse
 
@@ -115,10 +116,22 @@ class VectorStore:
                     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
                 );
                 CREATE INDEX IF NOT EXISTS task_trace_task_idx ON task_trace (task_id);
+                CREATE TABLE IF NOT EXISTS task_checkpoint (
+                    task_id INTEGER PRIMARY KEY REFERENCES research_task(id) ON DELETE CASCADE,
+                    stage TEXT NOT NULL DEFAULT 'created',
+                    plan TEXT,
+                    findings TEXT,
+                    draft TEXT,
+                    critic_round INTEGER NOT NULL DEFAULT 0,
+                    critic_rounds TEXT,
+                    used_tokens INTEGER NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
                 """
             )
             # 历史记录：保存最终报告（已存在的库用 IF NOT EXISTS 平滑加列）
             conn.execute("ALTER TABLE research_task ADD COLUMN IF NOT EXISTS report TEXT")
+            conn.execute("ALTER TABLE task_checkpoint ADD COLUMN IF NOT EXISTS critic_rounds TEXT")
             conn.commit()
 
     def create_task(self, question: str) -> int:
@@ -329,13 +342,78 @@ class VectorStore:
             ).fetchall()
         return [{"citation_id": r[0], "title": r[1], "url": r[2]} for r in rows]
 
-    def finish_task(self, task_id: int, status: str = "done") -> None:
+    def set_task_status(self, task_id: int, status: str) -> None:
+        """更新任务状态（续跑时把 failed/cancelled 重置为 running）。"""
         with self._connect() as conn:
             conn.execute(
                 "UPDATE research_task SET status = %s, updated_at = now() WHERE id = %s",
                 (status, task_id),
             )
             conn.commit()
+
+    def finish_task(self, task_id: int, status: str = "done") -> None:
+        self.set_task_status(task_id, status)
+
+    def save_checkpoint(
+        self,
+        task_id: int,
+        stage: str,
+        plan: dict | None = None,
+        findings: list | None = None,
+        draft: str | None = None,
+        critic_round: int = 0,
+        critic_rounds: list | None = None,
+        used_tokens: int = 0,
+    ) -> None:
+        """保存/更新任务断点检查点（plan/findings 存 JSON 字符串）。"""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO task_checkpoint
+                    (task_id, stage, plan, findings, draft, critic_round, critic_rounds, used_tokens, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+                ON CONFLICT (task_id) DO UPDATE SET
+                    stage = EXCLUDED.stage,
+                    plan = EXCLUDED.plan,
+                    findings = EXCLUDED.findings,
+                    draft = EXCLUDED.draft,
+                    critic_round = EXCLUDED.critic_round,
+                    critic_rounds = EXCLUDED.critic_rounds,
+                    used_tokens = EXCLUDED.used_tokens,
+                    updated_at = now()
+                """,
+                (
+                    task_id,
+                    stage,
+                    json.dumps(plan, ensure_ascii=False) if plan is not None else None,
+                    json.dumps(findings, ensure_ascii=False) if findings is not None else None,
+                    draft,
+                    critic_round,
+                    json.dumps(critic_rounds, ensure_ascii=False) if critic_rounds is not None else None,
+                    used_tokens,
+                ),
+            )
+            conn.commit()
+
+    def load_checkpoint(self, task_id: int) -> dict | None:
+        """读取任务检查点；不存在返回 None。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT stage, plan, findings, draft, critic_round, critic_rounds, used_tokens "
+                "FROM task_checkpoint WHERE task_id = %s",
+                (task_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "stage": row[0],
+            "plan": json.loads(row[1]) if row[1] else {},
+            "findings": json.loads(row[2]) if row[2] else [],
+            "draft": row[3] or "",
+            "critic_round": row[4] or 0,
+            "critic_rounds": json.loads(row[5]) if row[5] else [],
+            "used_tokens": row[6] or 0,
+        }
 
     def save_report(self, task_id: int, report: str) -> None:
         """保存最终报告内容。"""

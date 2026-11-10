@@ -214,6 +214,7 @@ async function submit() {
   startTimer();
 
   controller = startResearch(q, {
+    task_start: () => loadTasks(),
     plan_start: () => setStage('planning', 'active'),
     plan: (d) => {
       plan.value = d;
@@ -309,6 +310,8 @@ function cancel() {
   stopTimer();
   error.value = '';
   notice.value = '已取消';
+  // 等后端把状态标成 cancelled 后再刷新历史列表
+  setTimeout(loadTasks, 500);
 }
 
 function retry() {

@@ -144,6 +144,24 @@ class VectorStore:
             conn.commit()
         return row[0]
 
+    def find_done_task(self, question: str) -> dict | None:
+        """查找最近一条相同问题且已完成的任务（用于提示式复用）。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, question, status, created_at FROM research_task "
+                "WHERE question = %s AND status = 'done' "
+                "ORDER BY created_at DESC LIMIT 1",
+                (question,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row[0],
+            "question": row[1],
+            "status": row[2],
+            "created_at": row[3].isoformat(),
+        }
+
     def _assign_citation(self, conn, task_id: int, source_id: int) -> int:
         """把来源关联到任务并分配任务内引用号（已存在则复用）。
 

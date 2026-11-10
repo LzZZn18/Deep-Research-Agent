@@ -204,6 +204,14 @@ async def list_tasks():
     return await asyncio.to_thread(store.list_tasks, 50)
 
 
+@router.get("/tasks/lookup")
+async def lookup_task(question: str):
+    store = get_store()
+    await asyncio.to_thread(store.init_schema)
+    task = await asyncio.to_thread(store.find_done_task, question)
+    return {"task": task}
+
+
 @router.get("/tasks/{task_id}")
 async def get_task(task_id: int):
     store = get_store()

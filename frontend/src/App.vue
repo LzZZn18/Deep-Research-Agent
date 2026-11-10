@@ -353,10 +353,31 @@ function makeHandlers() {
   };
 }
 
+async function findDuplicate(q) {
+  try {
+    const res = await fetch(`/api/tasks/lookup?question=${encodeURIComponent(q)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.task || null;
+  } catch {
+    return null;
+  }
+}
+
 async function submit() {
   const q = question.value.trim();
   if (!q || running.value) return;
   resumeTargetId.value = null;
+  const dup = await findDuplicate(q);
+  if (dup) {
+    const reuse = window.confirm(
+      '该问题已有研究结果，是否直接查看？\n「确定」= 复用旧结果\n「取消」= 重新研究一遍'
+    );
+    if (reuse) {
+      openTask(dup.id);
+      return;
+    }
+  }
   reset();
   running.value = true;
   startTimer();

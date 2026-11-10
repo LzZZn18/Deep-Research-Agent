@@ -61,6 +61,8 @@ services:
     container_name: deepsearch-worker
     restart: unless-stopped
     command: python -m app.worker
+    # 停机时最多等待 5 分钟，让正在跑的研究任务完成再退出
+    stop_grace_period: 300s
     env_file:
       - ./backend/.env
     environment:

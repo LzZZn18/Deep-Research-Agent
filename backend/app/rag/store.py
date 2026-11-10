@@ -480,6 +480,23 @@ class VectorStore:
             for r in rows
         ]
 
+    def task_status_counts(self) -> dict:
+        """按状态统计任务数量（用于队列/状态监控）。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT status, COUNT(*) FROM research_task GROUP BY status"
+            ).fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    def fail_stale_running(self) -> int:
+        """把卡在 running 状态的任务标记为 failed（worker 重启时清理僵尸）。"""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE research_task SET status = 'failed' WHERE status = 'running'"
+            )
+            conn.commit()
+            return cur.rowcount
+
     def get_task(self, task_id: int) -> dict | None:
         """返回单个任务详情（问题、状态、报告、引用来源）。"""
         with self._connect() as conn:

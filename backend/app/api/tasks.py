@@ -243,6 +243,18 @@ async def task_events(task_id: int, settings: Settings = Depends(get_settings)):
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
 
 
+@router.get("/queue/stats")
+async def queue_stats(settings: Settings = Depends(get_settings)):
+    """队列与任务状态统计：排队中的 job 数 + 各状态任务数。"""
+    store = get_store()
+    await asyncio.to_thread(store.init_schema)
+    redis = await _get_redis(settings)
+    # arq 0.28 的队列是 zset（zadd 入队），用 zcard 取排队中的 job 数
+    queue_len = await redis.zcard("arq:queue")
+    by_status = await asyncio.to_thread(store.task_status_counts)
+    return {"queue_length": queue_len, "tasks": by_status}
+
+
 @router.get("/tasks")
 async def list_tasks():
     store = get_store()

@@ -22,6 +22,7 @@ const view = ref('new');
 const tasks = ref([]);
 const currentTask = ref(null);
 const resumeTargetId = ref(null);
+const queueStats = ref(null);
 
 function emptyStats() {
   return {
@@ -48,6 +49,7 @@ const elapsed = ref(0);
 let timerId = null;
 let pollTimer = null;
 let sseController = null;
+let queueTimer = null;
 let cancelled = false;
 let currentTaskId = null;
 let streamBuf = '';
@@ -59,6 +61,12 @@ const activeReport = computed(() =>
 
 const activeStats = computed(() =>
   view.value === 'history' ? currentTask.value?.stats || null : stats.value
+);
+
+const runningCount = computed(() => queueStats.value?.tasks?.running || 0);
+// arq 队列 zset 里包含「排队 + 运行中」的未完成 job，减去运行中即真正排队的
+const queueLength = computed(() =>
+  Math.max(0, (queueStats.value?.queue_length || 0) - runningCount.value)
 );
 
 const byAgentRows = computed(() => {
@@ -246,6 +254,16 @@ async function loadTasks() {
   }
 }
 
+async function loadQueueStats() {
+  try {
+    const res = await fetch('/api/queue/stats');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    queueStats.value = await res.json();
+  } catch {
+    // 静默失败
+  }
+}
+
 async function openTask(id) {
   error.value = '';
   notice.value = '';
@@ -335,6 +353,7 @@ function makeHandlers() {
     },
     answer_chunk: (d) => appendStream(d.content || ''),
     answer: (d) => {
+      notice.value = '';
       streamBuf = '';
       streamPending = false;
       report.value = d.content;
@@ -343,13 +362,18 @@ function makeHandlers() {
       setStage('done', 'done');
     },
     task_end: () => {
+      notice.value = '';
       setStage('done', 'done');
       running.value = false;
       stopTimer();
       stopSSE();
       loadTasks();
     },
+    notice: (d) => {
+      notice.value = d.message || '';
+    },
     error: (d) => {
+      notice.value = '';
       if (!cancelled) error.value = d.message || '出错了';
       running.value = false;
       stopTimer();
@@ -552,7 +576,11 @@ function retry() {
   submit();
 }
 
-onMounted(loadTasks);
+onMounted(() => {
+  loadTasks();
+  loadQueueStats();
+  queueTimer = setInterval(loadQueueStats, 5000);
+});
 </script>
 
 <template>
@@ -560,6 +588,10 @@ onMounted(loadTasks);
     <aside class="sidebar">
       <div class="sidebar-logo">Deep<span class="grad">Research</span></div>
       <button class="btn-new" @click="newResearch">＋ 新研究</button>
+      <div v-if="queueStats" class="queue-stats">
+        <span class="queue-badge">排队 {{ queueLength }}</span>
+        <span class="queue-badge running">进行中 {{ runningCount }}</span>
+      </div>
       <div class="sidebar-title">历史记录</div>
       <div class="history-list">
         <div v-if="!tasks.length" class="history-empty">暂无历史记录</div>

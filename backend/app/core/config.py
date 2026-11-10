@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     llm_timeout: float = 60.0   # LLM 调用超时（秒）
     llm_retries: int = 2        # LLM 失败重试次数
     task_timeout: float = 600.0 # 整个研究任务超时（秒）
+    worker_concurrency: int = 2  # 单个 worker 进程并发处理的研究任务数
+    task_retries: int = 1        # 研究失败后自动重试次数（0 = 不重试）
 
     # 成本控制
     token_budget: int = 200_000 # 单任务 token 预算上限（prompt+completion 合计）

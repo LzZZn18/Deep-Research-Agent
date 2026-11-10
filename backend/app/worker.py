@@ -75,8 +75,8 @@ async def run_research_task(ctx, task_id: int, question: str) -> None:
         VectorSearchTool(store=store, embedder=embedder, task_id=task_id),
     ]
 
-    try:
-        content = await asyncio.wait_for(
+    async def _research() -> str:
+        return await asyncio.wait_for(
             run_deep_research(
                 provider=provider,
                 store=store,
@@ -90,13 +90,31 @@ async def run_research_task(ctx, task_id: int, question: str) -> None:
             ),
             timeout=_settings.task_timeout,
         )
-    except asyncio.TimeoutError:
-        await emit("error", {"message": f"研究超时（超过 {_settings.task_timeout:g}s），已自动中止"})
-        await emit("task_end", {})
-        await asyncio.to_thread(store.finish_if_running, task_id, "failed")
-        return
-    except Exception as e:
-        await emit("error", {"message": f"研究失败：{e}"})
+
+    # 失败自动重试：每次重试都会从 checkpoint 断点继续，不重做已完成阶段
+    content = None
+    last_error = None
+    max_attempts = _settings.task_retries + 1  # 至少 1 次
+    for attempt in range(1, max_attempts + 1):
+        try:
+            content = await _research()
+            last_error = None
+            break
+        except asyncio.TimeoutError:
+            last_error = f"研究超时（超过 {_settings.task_timeout:g}s）"
+        except Exception as e:
+            last_error = f"研究失败：{e}"
+        if attempt < max_attempts:
+            await emit(
+                "notice",
+                {
+                    "message": f"{last_error}，正在从断点自动重试（第 {attempt}/{_settings.task_retries} 次）…"
+                },
+            )
+            await asyncio.sleep(2)  # 短暂停顿，避免紧连打爆限流
+
+    if last_error is not None:
+        await emit("error", {"message": last_error})
         await emit("task_end", {})
         await asyncio.to_thread(store.finish_if_running, task_id, "failed")
         return
@@ -107,10 +125,20 @@ async def run_research_task(ctx, task_id: int, question: str) -> None:
     await emit("task_end", {})
 
 
+async def on_startup(_ctx) -> None:
+    """worker 启动时清理卡在 running 的僵尸任务（上次硬停遗留）。"""
+    store = VectorStore(_settings.db_url, _settings.embedding_dim)
+    await asyncio.to_thread(store.init_schema)
+    n = await asyncio.to_thread(store.fail_stale_running)
+    if n:
+        print(f"[worker] 清理了 {n} 个卡在 running 的僵尸任务")
+
+
 if __name__ == "__main__":
     Worker(
         functions=[run_research_task],
         redis_settings=RedisSettings.from_dsn(_settings.redis_url),
-        max_jobs=1,  # 阶段1先单并发，避免打爆 LLM 限流
+        max_jobs=_settings.worker_concurrency,
         job_timeout=int(_settings.task_timeout) + 60,
+        on_startup=on_startup,
     ).run()

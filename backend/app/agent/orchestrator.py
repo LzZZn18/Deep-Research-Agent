@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import time
 
 from app.agent.loop import EmitFn, TraceFn, run_agent
 from app.agent.prompts import (
@@ -63,6 +64,45 @@ async def _chat(
             "duration_ms": resp.duration_ms,
         })
     return (resp.content or "").strip()
+
+
+async def _writer_stream(
+    provider: LLMProvider,
+    system_prompt: str,
+    user_content: str,
+    trace: TraceFn | None = None,
+    label: str = "writer",
+) -> tuple[str, list[str]]:
+    """流式生成一版报告：逐段累积但不实时推给前端，返回 (完整正文, 分块列表)。"""
+    parts: list[str] = []
+    usage: dict = {}
+    start = time.perf_counter()
+    async for chunk in provider.stream(
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        [],
+    ):
+        if chunk.delta:
+            parts.append(chunk.delta)
+        if chunk.usage:
+            usage = chunk.usage
+
+    text = "".join(parts).strip()
+    if trace:
+        await trace({
+            "agent": label,
+            "kind": "llm",
+            "name": "chat",
+            "input_preview": user_content[:200],
+            "output_preview": text[:200],
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            "duration_ms": int((time.perf_counter() - start) * 1000),
+        })
+    return text, parts
 
 
 def _writer_input(
@@ -176,7 +216,7 @@ async def run_deep_research(
     )
 
     # 5. Writer ⇄ Critic 循环
-    draft = await _chat(
+    draft, chunks = await _writer_stream(
         provider,
         WRITER_PROMPT,
         _writer_input(question, sub_questions, findings_text, citations_text),
@@ -202,7 +242,7 @@ async def run_deep_research(
             break
         if emit:
             await emit("writer_rewrite", {"round": r + 1, "feedback": feedback})
-        draft = await _chat(
+        draft, chunks = await _writer_stream(
             provider,
             WRITER_PROMPT,
             _writer_input(
@@ -215,4 +255,9 @@ async def run_deep_research(
             trace=record,
             label="writer",
         )
+    # 审核结束后，才把最终版报告流式推给前端
+    if emit:
+        await emit("answer_start", {})
+        for chunk in chunks:
+            await emit("answer_chunk", {"content": chunk})
     return draft

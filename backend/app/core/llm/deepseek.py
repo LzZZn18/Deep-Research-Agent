@@ -1,10 +1,11 @@
 import asyncio
 import json
 import time
+from collections.abc import AsyncIterator
 
 import httpx
 
-from app.core.llm.base import LLMProvider, LLMResponse, ToolCall
+from app.core.llm.base import LLMProvider, LLMResponse, StreamChunk, ToolCall
 from app.core.retry import call_with_retry
 
 
@@ -88,3 +89,52 @@ class DeepSeekProvider(LLMProvider):
             total_tokens=usage.get("total_tokens") or 0,
             duration_ms=duration_ms,
         )
+
+    async def stream(
+        self, messages: list[dict], tools: list[dict] | None = None
+    ) -> AsyncIterator[StreamChunk]:
+        """流式调用：逐段产出正文，最后一个 chunk 的 usage 字段携带 token 用量。"""
+        payload: dict = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if tools:
+            payload["tools"] = tools
+
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        url = f"{self.base_url}/chat/completions"
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                    if resp.status_code >= 400:
+                        body = (await resp.aread()).decode("utf-8", errors="replace")
+                        raise RuntimeError(
+                            f"DeepSeek 返回 HTTP {resp.status_code}：{body[:300]}"
+                        )
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if not line.startswith("data:"):
+                            continue
+                        data_str = line[len("data:") :].strip()
+                        if not data_str or data_str == "[DONE]":
+                            continue
+                        try:
+                            obj = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+                        usage = obj.get("usage")
+                        choices = obj.get("choices") or []
+                        delta = ""
+                        if choices:
+                            delta = (choices[0].get("delta") or {}).get("content") or ""
+                        yield StreamChunk(delta=delta, usage=usage)
+        except httpx.RequestError as e:
+            raise RuntimeError(
+                f"无法连接 DeepSeek（{self.base_url}）：网络或 DNS 解析失败，"
+                f"请检查网络/代理/防火墙。原始错误：{e}"
+            ) from e
+        except asyncio.TimeoutError as e:
+            raise RuntimeError(f"调用 DeepSeek 流式超时（>{self.timeout:g}s）") from e

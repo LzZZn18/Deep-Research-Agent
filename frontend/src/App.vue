@@ -47,6 +47,8 @@ const elapsed = ref(0);
 let timerId = null;
 let controller = null;
 let cancelled = false;
+let streamBuf = '';
+let streamPending = false;
 
 const activeReport = computed(() =>
   view.value === 'history' ? currentTask.value?.report || '' : report.value
@@ -151,10 +153,28 @@ function reset() {
   researchers.value = [];
   criticRounds.value = [];
   report.value = '';
+  streamBuf = '';
+  streamPending = false;
   toolLogs.value = [];
   stats.value = emptyStats();
   resetStages();
   cancelled = false;
+}
+
+function flushStream() {
+  if (streamBuf) {
+    report.value += streamBuf;
+    streamBuf = '';
+  }
+  streamPending = false;
+}
+
+function appendStream(text) {
+  streamBuf += text;
+  if (!streamPending) {
+    streamPending = true;
+    requestAnimationFrame(flushStream);
+  }
 }
 
 async function loadTasks() {
@@ -249,7 +269,15 @@ async function submit() {
       setStage('critiquing', 'pending');
       setStage('writing', 'active');
     },
+    answer_start: () => {
+      streamBuf = '';
+      streamPending = false;
+      report.value = '';
+    },
+    answer_chunk: (d) => appendStream(d.content || ''),
     answer: (d) => {
+      streamBuf = '';
+      streamPending = false;
       report.value = d.content;
       setStage('writing', 'done');
       setStage('critiquing', 'done');

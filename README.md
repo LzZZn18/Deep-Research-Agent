@@ -128,6 +128,32 @@ npm run dev
 
 ---
 
+## 🧪 运行测试
+
+测试不调用真实 LLM、不联网，用假的 provider 与工具验证编排逻辑，零成本、秒级跑完。
+
+```bash
+# 1. 启动数据库（测试会自动创建独立的 deepsearch_test 库，不污染开发数据）
+docker compose up -d db
+
+# 2. 安装测试依赖
+cd backend
+pip install -r requirements-dev.txt
+
+# 3. 运行
+python -m pytest          # 全量
+python -m pytest -v       # 详细输出
+```
+
+覆盖范围：
+
+| 文件 | 覆盖 |
+|------|------|
+| `tests/test_store.py` | 状态机（`start_if_pending` / `finish_if_running` 的条件更新）、断点往返、引用编号复用、僵尸任务清理 |
+| `tests/test_pipeline.py` | 用 `FakeProvider` 冒充 LLM，跑通 Planner→Researcher→Writer⇄Critic 全链路、简单问题快路径、工具调用循环 |
+
+---
+
 ## ⚙️ 配置说明（`backend/.env`）
 
 | 变量 | 说明 |

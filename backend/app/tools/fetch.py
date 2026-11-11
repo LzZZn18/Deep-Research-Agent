@@ -5,7 +5,7 @@ import httpx
 import trafilatura
 
 from app.core.security import check_public_url
-from app.rag.chunker import chunk_text
+from app.rag.chunker import chunk_text, dedupe_chunks
 from app.rag.embedding import Embedder
 from app.rag.store import VectorStore
 from app.tools.base import Tool
@@ -63,7 +63,9 @@ class FetchTool(Tool):
             return f"无法从 {url} 提取正文内容。"
 
         title = await asyncio.to_thread(self._extract_title, html) or url
-        chunks = chunk_text(text)
+        chunks = dedupe_chunks(chunk_text(text))
+        if not chunks:
+            return f"无法从 {url} 提取有效正文内容。"
         embeddings = await asyncio.to_thread(self.embedder.embed, chunks)
         citation_id = await asyncio.to_thread(
             self.store.add_source, self.task_id, url, title, chunks, embeddings

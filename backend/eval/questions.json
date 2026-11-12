@@ -1,0 +1,62 @@
+[
+  {
+    "id": "q1",
+    "question": "什么是向量数据库？",
+    "type": "simple",
+    "key_points": ["存储高维向量", "按相似度检索", "用于语义搜索/推荐/检索增强"]
+  },
+  {
+    "id": "q2",
+    "question": "比较向量数据库和传统关系型数据库的优缺点。",
+    "type": "research",
+    "key_points": ["存储结构差异", "查询/检索方式差异", "各自适用场景", "混合使用趋势"]
+  },
+  {
+    "id": "q3",
+    "question": "RAG（检索增强生成）是什么？为什么它能减少大语言模型的幻觉？",
+    "type": "research",
+    "key_points": ["检索相关文档", "把证据注入上下文", "回答有据可依", "降低编造"]
+  },
+  {
+    "id": "q4",
+    "question": "Transformer 的自注意力机制（self-attention）是如何工作的？",
+    "type": "research",
+    "key_points": ["Query/Key/Value", "注意力权重计算", "并行与长程依赖", "多头注意力"]
+  },
+  {
+    "id": "q5",
+    "question": "2024 年大语言模型领域有哪些重要进展？",
+    "type": "research_time",
+    "key_points": ["多模态能力", "长上下文", "Agent 能力", "开源模型生态"]
+  },
+  {
+    "id": "q6",
+    "question": "什么是大语言模型（LLM）？",
+    "type": "simple",
+    "key_points": ["大规模参数神经网络", "在大规模文本上预训练", "基于 Transformer", "用于文本生成与理解"]
+  },
+  {
+    "id": "q7",
+    "question": "向量检索中 HNSW 和 IVF 两种索引的原理和区别是什么？",
+    "type": "research",
+    "key_points": ["HNSW 分层可导航小世界图", "IVF 聚类倒排索引", "召回率与查询速度的权衡", "各自适用场景"]
+  },
+  {
+    "id": "q8",
+    "question": "如何评估一个 RAG（检索增强生成）系统的效果？",
+    "type": "research",
+    "key_points": ["检索质量指标（召回率/精确率）", "答案忠实度", "引用正确性", "端到端评测与分模块评测"]
+  },
+  {
+    "id": "q9",
+    "question": "微调（fine-tuning）和 RAG 分别适合什么场景，如何选择？",
+    "type": "research",
+    "key_points": ["微调改变模型权重", "RAG 注入外部知识", "成本与时效性差异", "知识更新与可追溯性"]
+  },
+  {
+    "id": "q10",
+    "question": "多智能体（multi-agent）系统相比单智能体有哪些优势和挑战？",
+    "type": "research",
+    "key_points": ["角色分工与并行", "协作与通信开销", "错误传播与一致性", "适用场景"]
+  }
+]

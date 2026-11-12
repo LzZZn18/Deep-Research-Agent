@@ -1,0 +1,869 @@
+[
+  {
+    "id": "q1",
+    "question": "什么是向量数据库？",
+    "type": "simple",
+    "status": "done",
+    "report": "向量数据库是一种专门用于存储、管理和检索向量（即高维数值数组，通常由机器学习模型对文本、图像、音频等数据编码生成）的数据库系统。其核心能力是高效的相似度搜索（如余弦相似度、欧氏距离），通过近似最近邻（ANN）索引（如 HNSW、IVF）在海量向量中快速找到与查询向量最相近的结果，广泛应用于语义搜索、推荐系统、RAG（检索增强生成）和图像检索等场景。",
+    "elapsed_s": 2.6,
+    "sources": [],
+    "citations": {
+      "total_refs": 0,
+      "unique_refs": 0,
+      "available_sources": 0,
+      "fabricated": [],
+      "fabricated_rate": 0.0
+    },
+    "stats": {
+      "prompt_tokens": 218,
+      "completion_tokens": 123,
+      "total_tokens": 341,
+      "total_cost": 0.00142,
+      "total_duration_ms": 2377,
+      "calls": 1,
+      "by_agent": {
+        "planner": {
+          "tokens": 341,
+          "cost": 0.00142,
+          "duration_ms": 2377,
+          "calls": 1
+        }
+      }
+    },
+    "judge": {
+      "relevance": 5,
+      "accuracy": 5,
+      "citation": null,
+      "completeness": 5,
+      "structure": 5,
+      "summary": "报告准确、完整地解释了向量数据库的定义、核心检索机制与典型应用场景，完全契合期望关键点，结构紧凑清晰。"
+    }
+  },
+  {
+    "id": "q2",
+    "question": "比较向量数据库和传统关系型数据库的优缺点。",
+    "type": "research",
+    "status": "done",
+    "report": "# 向量数据库 vs. 关系型数据库：原理、优缺点与选型指南\n\n## 一、结论先行\n\n向量数据库和关系型数据库并非同类替代品，而是针对**不同数据类型和查询模式**设计的两种工具：关系型数据库回答\"哪条记录满足精确条件\"，向量数据库回答\"哪些内容在语义上最接近\"。**纯语义检索选向量数据库，结构化事务处理选关系型数据库，两者都需要时采用混合架构并重点投入同步与治理** [1][5][7]。\n\n---\n\n## 二、核心原理对比\n\n### 2.1 关系型数据库：表结构 + ACID 事务\n\n关系型数据库把数据组织为相互关联的表（行与列），通过主键、外键和索引建立表间关系、防止重复并加速查询 [3][6]。其最核心的可靠性机制是基于事务的 **ACID 四大特性** [6]：\n\n- **原子性**：事务内操作要么全部成功、要么全部回滚 [3][6]；\n- **一致性**：事务必须把数据库从一个合法状态转移到另一个合法状态，违反约束的事务被拒绝 [3][6]；\n- **隔离性**：并发事务互不干扰 [3][6]；\n- **持久性**：事务提交后即使系统故障数据也不丢失 [3][6]。\n\n此外，关系型数据库通过数据规范化减少冗余、维护完整性，并以主键/外键与约束保证数据准确 [6]。其查询基于 SQL 的精确条件匹配，**无法理解语义相似性** [4]。\n\n### 2.2 向量数据库：Embedding + ANN 近似检索\n\n向量数据库的前提是用 Embedding 模型把文本、图像、音频等非结构化数据转成高维数值数组（常见数百到数千维），语义相近的内容在向量空间中距离更近，从而让计算机\"计算语义\"而非仅匹配字面 [2][4]。例如搜索\"如何降低云计算成本\"，可以召回\"优化 AWS 费用支出\"这类无共同关键词的文档 [4]。\n\n检索层面，暴力逐一比对（FLAT）只适用于百万级以下数据，无法规模化，因此向量数据库依赖 **ANN（近似最近邻）算法**——以牺牲极小召回精度换取数量级的速度提升 [2][4]。主流索引包括：\n\n| 索引 | 原理 | 特点 |\n|---|---|---|\n| **HNSW** | 构建多层邻近图，从稀疏顶层贪心下降到密集底层 | 当前最主流，延迟低、召回率 95%~99%，支持动态增删；但索引需全量驻留内存 [2] |\n| **IVF** | K-Means 聚类分桶，查询只探测最近几个桶 | 构建快，适数据频繁变化；同等召回下延迟通常高于 HNSW [4][2] |\n| **量化类（PQ 等）** | 压缩向量、部分数据放磁盘 | 显著降低存储成本，适合超大规模、低频访问负载 [4] |\n\n系统层面，向量数据库还提供向量+元数据混合过滤、秒级实时增删改、多种距离度量（余弦适合文本、欧氏适合空间数据、内积适合归一化向量）以及分布式分片与复制能力 [2][4]。\n\n---\n\n## 三、优缺点逐项对比\n\n### 3.1 向量数据库\n\n**优点：**\n\n- **规模化处理非结构化数据**：企业 80% 以上数据是非结构化数据，向量数据库是目前能高效索引检索这类数据的技术路径 [2][4]。\n- **语义理解能力强**：能捕捉关键词之外的深层语义关联 [2][4]。\n- **高性能检索**：借助 ANN 在十亿级向量上实现毫秒/亚秒级响应 [4]。\n- **多模态统一检索**：文本、图像、音频、视频统一向量化并支持跨模态检索 [4]。\n- **原生混合过滤**：向量相似度可与标签、时间、权限等结构化条件叠加 [4]。\n- **生态融合好**：与 LLM、RAG、推荐引擎无缝集成，传统数据库（pgvector、OpenSearch k-NN 等）也在原生集成向量能力 [4]。\n\n**缺点：**\n\n- **精度与性能的固有权衡**：ANN 以少量精度换速度，召回率过高会显著增加计算开销、降低 QPS，需按业务调参（医学影像、金融风控常需 95%+，搜索/推荐 80%~90% 即可）[2][4]。\n- **存储与内存成本高**：数十亿条高维向量占用大量资源，HNSW 索引必须全量加载内存，千万级高维向量易 OOM，需依赖量化压缩、磁盘索引等手段 [2][4]。\n- **索引构建慢**：HNSW 大批量导入耗时久，且原生不支持冷数据落盘 [2]。\n- **运维复杂**：分布式方案参数多、调优门槛高 [2]。\n- **一致性较弱**：以最终一致性为主，多数场景不适合事务性精确查询 [4]。\n- **弱于精确匹配**：稠密向量对关键词精准匹配偏弱，常需结合稀疏向量/全文检索 [2][4]。\n\n### 3.2 关系型数据库\n\n**优点：**\n\n- **数据可靠性与一致性**：ACID 保证数据准确、一致、故障不丢失，适合\"每次都必须正确\"的系统 [3][6]。\n- **强完整性约束**：主键、外键与约束保证数据符合业务规则 [3][6]。\n- **成熟的查询能力**：支持复杂 SQL 查询与索引优化 [3][6]。\n- **标准化与生态成熟**：自 1970 年代发展至今，Oracle、MySQL、PostgreSQL 等产品生态完善 [6]。\n\n**缺点：**\n\n- **横向扩展困难**：ACID 强一致事务在分布式场景下成为性能瓶颈，scale-out 不如 NoSQL 灵活 [3][6]。\n- **模式僵化**：固定 schema 难以适应高度非结构化或结构频繁变化的数据 [3]。\n- **规范化带来性能代价**：复杂 join 可能拖慢查询，读密集场景需反规范化优化 [3][6]。\n- **误用风险**：将关系型数据库用于高度非结构化数据或强行套用刚性 schema 是常见设计错误 [3]。\n\n---\n\n## 四、应用场景对比\n\n| 场景类别 | 关系型数据库 | 向量数据库 |\n|---|---|---|\n| 典型场景 | 金融交易、账户管理、ERP、电商订单、权限/审计日志 [3][6][1] | RAG 知识库、语义搜索、推荐系统、以图搜图、LLM 长期记忆 [2][4] |\n| 数据形态 | 结构化、表格化、关系明确 [7] | 非结构化、高维嵌入 [7] |\n| 查询模式 | 精确匹配、复杂 join、聚合 | 相似度/Top-K 语义检索 [7] |\n| 一致性 | 强一致、ACID 事务 [3][6] | 最终一致为主 [4] |\n\n向量数据库的典型落地包括：RAG（当前最主要场景，用于企业知识库、法律/医疗 AI 等以降低 LLM 幻觉）、语义搜索、推荐系统（Salesforce、eBay、Airbnb 等采用）、多模态检索、聊天机器人上下文，以及计算机视觉、基因组学、金融欺诈检测等垂直领域 [2][4]。\n\n---\n\n## 五、选型决策：何时用哪种，何时结合\n\n### 5.1 本质差异决定选型边界\n\n关系型数据库擅长结构化数据的精确匹配、复杂多表连接与聚合，并以 ACID 保证强一致 [4][7]；向量数据库专门处理非结构化数据的相似性检索，本质是\"在高维空间中快速找到语义相似项\"的专用工具 [5]。**若核心查询其实是\"按结构化属性精确过滤\"，选用向量数据库只是徒增复杂度与成本，属于用错工具** [5]。\n\n### 5.2 三种选型路径\n\n1. **选向量数据库**：约 95% 的查询是\"找出与给定嵌入最相似的 N 条记录\"、几乎不需要关系连接，且无需对结构化应用数据做过滤时，专用向量库提供更干净的操作模型与更简单的索引调优 [1]；典型如纯语义搜索、推荐、多模态检索场景 [4][7]。\n\n2. **选关系型数据库**：数据结构化、关系明确，需要精确匹配、复杂连接与聚合，或需要 ACID 事务保障关键业务（用户记录、权限、审计日志、账务）时 [1][5][7]。\n\n3. **选两者结合（混合架构）**：当**既要语义相似、又要关系/权限约束**（如企业级 RAG、复杂业务知识检索）时采用 [1]。职责划分是：关系库存放权威应用数据（用户记录、文档元数据、权限、审计日志及全部结构化状态），向量库存放嵌入并通过 ID 关联回关系记录；查询时向量库先找出最相似嵌入的 ID，应用再回关系库取完整数据并做访问控制 [1][5]。\n\n### 5.3 关键提醒\n\n- **结合不是默认选项**：混合架构带来融合排序、同步、治理与运维复杂度，应由查询与数据的实际需求证明其必要性；应先在单一系统上起步，只有当查询确实因缺少关系连接而失败时，才引入第二套数据库 [1][5]。\n- **最大风险在同步层**：文档在关系库被更新/删除时，向量库中对应嵌入必须重新生成或删除；权限变化时向量库的过滤逻辑须反映新规则。多数混合架构失败源于团队只重视入库管道、却忽视更新与删除的同步路径 [1]。\n- **性能评估**：需权衡新增向量库的运维复杂度是否值得其性能收益，可借助向量索引策略与基准测试工具（如 VectorDBBench）优化 [7]。\n\n### 5.4 决策清单\n\n| 维度 | 倾向关系型 | 倾向向量库 |\n|---|---|---|\n| 数据类型 | 结构化、表格、关系明确 | 非结构化、高维嵌入 [7] |\n| 查询模式 | 精确匹配、复杂 join、聚合 | 相似度/语义检索、推荐 [7] |\n| 一致性要求 | 强一致、ACID 事务 | 最终一致为主 [4] |\n| 是否需关系连接 | 需要 | 不需要 [1] |\n| 性能特征 | 受索引类型限制 | ANN 亚毫秒级检索 [4] |\n\n**简明决策路径**：核心查询是精确结构化过滤 → 关系型库；核心是语义相似且无关系 join → 专用向量库；两者都真实需要 → 混合架构，并重点投入同步与治理 [1][5]。\n\n---\n\n## 参考来源\n\n- [1] Vector Database vs Relational Database: A Decision Guide — https://mudassirkhan.me/blog/vector-database-vs-relational-database\n- [2] 深度干货|万字长文解读向量数据库的前世今生（先码后学） - Zilliz 向量数据库 — https://zilliz.com.cn/blog/Deep-Dive-Into-Vector-Databases\n- [3] Relational Database: Structure, Benefits, and Key Use Cases — https://www.acceldata.io/blog/what-is-a-relational-database-architecture-features-and-real-world-applications\n- [4] 什么是向量数据库 - 向量检索 - AWS — https://aws.amazon.com/cn/what-is/vector-databases\n- [5] Vector Database Architecture: 7 Patterns for Enterprise Scale (2026) · Arjun Jaggi — https://arjunjaggi.com/blog/vector-database-architecture\n- [6] Understanding Relational Databases | RisingWave — https://risingwave.com/blog/understanding-relational-databases\n- [7] 关系数据库与向量数据库 - Zilliz 向量数据库 — https://zilliz.com.cn/blog/relational-databases-vs-vector-databases",
+    "elapsed_s": 115.2,
+    "sources": [
+      {
+        "citation_id": 1,
+        "title": "Vector Database vs Relational Database: A Decision Guide",
+        "url": "https://mudassirkhan.me/blog/vector-database-vs-relational-database"
+      },
+      {
+        "citation_id": 2,
+        "title": "深度干货|万字长文解读向量数据库的前世今生（先码后学） - Zilliz 向量数据库",
+        "url": "https://zilliz.com.cn/blog/Deep-Dive-Into-Vector-Databases"
+      },
+      {
+        "citation_id": 3,
+        "title": "Relational Database: Structure, Benefits, and Key Use Cases",
+        "url": "https://www.acceldata.io/blog/what-is-a-relational-database-architecture-features-and-real-world-applications"
+      },
+      {
+        "citation_id": 4,
+        "title": "什么是向量数据库 - 向量检索 - AWS",
+        "url": "https://aws.amazon.com/cn/what-is/vector-databases"
+      },
+      {
+        "citation_id": 5,
+        "title": "Vector Database Architecture: 7 Patterns for Enterprise Scale (2026) · Arjun Jaggi",
+        "url": "https://arjunjaggi.com/blog/vector-database-architecture"
+      },
+      {
+        "citation_id": 6,
+        "title": "Understanding Relational Databases | RisingWave",
+        "url": "https://risingwave.com/blog/understanding-relational-databases"
+      },
+      {
+        "citation_id": 7,
+        "title": "关系数据库与向量数据库 - Zilliz 向量数据库",
+        "url": "https://zilliz.com.cn/blog/relational-databases-vs-vector-databases"
+      }
+    ],
+    "citations": {
+      "total_refs": 101,
+      "unique_refs": 7,
+      "available_sources": 7,
+      "fabricated": [],
+      "fabricated_rate": 0.0
+    },
+    "stats": {
+      "prompt_tokens": 73810,
+      "completion_tokens": 7308,
+      "total_tokens": 81118,
+      "total_cost": 0.206084,
+      "total_duration_ms": 238013,
+      "calls": 37,
+      "by_agent": {
+        "critic": {
+          "tokens": 3029,
+          "cost": 0.006118,
+          "duration_ms": 1479,
+          "calls": 1
+        },
+        "planner": {
+          "tokens": 298,
+          "cost": 0.001034,
+          "duration_ms": 1574,
+          "calls": 1
+        },
+        "researcher-1": {
+          "tokens": 24742,
+          "cost": 0.060122,
+          "duration_ms": 30170,
+          "calls": 10
+        },
+        "researcher-2": {
+          "tokens": 25316,
+          "cost": 0.058288,
+          "duration_ms": 95281,
+          "calls": 13
+        },
+        "researcher-3": {
+          "tokens": 21043,
+          "cost": 0.051548004,
+          "duration_ms": 96330,
+          "calls": 11
+        },
+        "writer": {
+          "tokens": 6690,
+          "cost": 0.028974,
+          "duration_ms": 13179,
+          "calls": 1
+        }
+      }
+    },
+    "judge": {
+      "relevance": 5,
+      "accuracy": 5,
+      "citation": 5,
+      "completeness": 5,
+      "structure": 5,
+      "summary": "报告全面且有条理地对比了向量数据库与关系型数据库在存储结构、查询方式、优缺点、适用场景及混合架构趋势，引用规范且紧扣原问题。"
+    }
+  },
+  {
+    "id": "q3",
+    "question": "RAG（检索增强生成）是什么？为什么它能减少大语言模型的幻觉？",
+    "type": "research",
+    "status": "done",
+    "report": "# RAG（检索增强生成）及其减少大模型幻觉的机制\n\n## 一、结论速览\n\nRAG（Retrieval-Augmented Generation，检索增强生成）是一种把生成式大语言模型与外部知识库连接起来的 AI 架构：在模型生成答案之前，系统先从外部知识源检索与问题相关的资料，再把这些资料作为上下文注入提示，让模型\"带着证据回答\" [2]。它之所以能减少幻觉，根本原因在于把答案的知识来源从模型固化的参数化记忆，部分转移到可检索、可更新、可溯源的外部文档上，从而直接缓解训练数据不完整、噪声大、知识冻结、推理时缺乏可验证信息等幻觉诱因 [3][5]。但 RAG 做的是\"降低\"而非\"消除\"幻觉：检索失败与生成缺陷两个环节各自会引入新的幻觉形态，且模型内在的推理不一致问题超出 RAG 的作用范围 [5][6]。\n\n---\n\n## 二、RAG 是什么：定义、架构与工作流程\n\n### 2.1 定义\n\nRAG 是一种通过将生成式 LLM 与外部知识库连接来优化模型性能的 AI 架构，使模型能够给出更相关、质量更高的响应 [2]。它把传统信息检索系统（搜索、数据库）的优势与生成式 LLM 的能力结合起来，将用户自有数据与世界知识注入模型，使输出更准确、更及时、更贴合具体需求 [2]。\n\n其动因在于 LLM 的知识来自有限的预训练数据，天然存在幻觉、知识过时、推理不透明等问题；RAG 通过引入外部知识来缓解这些问题，尤其适用于知识密集或需要持续更新知识的场景 [7]。其关键优势是**无需重新训练模型**即可让生成式模型适配特定领域，避免高昂的再训练成本，同时企业敏感数据可保留在本地以保护隐私，并降低幻觉概率 [2][8]。\n\n### 2.2 核心架构\n\n从组件视角看，RAG 系统包含四个部分 [2]：\n\n| 组件 | 职责 |\n|---|---|\n| **知识库** | 外部数据存储库，存放可被检索的资料 |\n| **检索器** | 在知识库中搜索相关数据的 AI 模型，将数据矢量化以支持语义向量搜索，把用户查询转为嵌入（embedding）后检索相似嵌入；相比传统关键词搜索可降低延迟 [2] |\n| **整合层** | 协调整体功能的中心，把原始查询与检索返回的增强上下文组合成新提示，并运用提示工程技术 [2] |\n| **生成器** | 依据用户查询与检索数据生成最终输出的生成式模型 [2] |\n\n在工程实现上，系统通常用向量数据库（如 Milvus）存储嵌入以支持快速检索，以 LLM 作为基础生成组件，并用 LangChain / LlamaIndex 等编排框架提供文档加载器等工具处理多来源数据 [2][8]。\n\n### 2.3 典型工作流程\n\n**在线五阶段流程** [2]：\n1. 用户提交提示（prompt）；\n2. 检索模型查询知识库以获取相关数据；\n3. 相关信息返回整合层；\n4. 系统用检索数据增强上下文，为 LLM 构建增强提示；\n5. LLM 生成输出并返回给用户。\n\n**离线 / 在线两段式流程** [8]：\n- **离线文档处理链**：文档提取（从数据库、文档、实时 Feed 等来源加载）→ 文本预处理与分割（长文本切为小片段，以适配嵌入模型的 token 上限）→ 生成嵌入（转为高维向量）→ 存入向量数据库。\n- **在线查询链**：用户提交查询 → 查询向量与库中向量做相似度搜索 → 检索相关数据 → LLM 结合查询与检索上下文生成响应。\n\n**三阶段概括**（索引—检索—生成）：Naive RAG 遵循 indexing、retrieval、generation 流程，文档与提示组合后送入模型生成回答；多轮对话场景还可将对话历史整合进提示 [7]。\n\n### 2.4 架构演进：Naive / Advanced / Modular\n\n- **Naive RAG**：最基础的\"检索—读取\"模式，从知识库抽取信息直接喂给 LLM 生成答案 [7]。\n- **Advanced RAG**：在检索前、中、后各环节加入优化。预检索阶段优化数据索引（提升数据粒度、优化索引结构、增加元数据、对齐优化、混合检索等），并引入查询改写（如 Rewrite-Retrieve-Read）、迭代检索等技术 [7]。\n- **Modular RAG**：将流程拆分为可独立演进的松耦合模块（检索器、重排序器、推理器、生成器、验证器等），是前两者的泛化形式——Naive 与 Advanced RAG 是模块固定的特例；扩展模块包括搜索、记忆、融合、路由、预测、任务适配器等，可按问题情境重排，具备更高灵活性与可扩展性 [7]。\n\n---\n\n## 三、大语言模型为什么会产生幻觉\n\n幻觉并非单一原因造成，而是横跨\"数据 → 训练 → 推理\"全流程的系统性问题 [1]，并可进一步从\"提示诱发 vs 模型内在\"两个维度归因 [4]。\n\n### 3.1 按 LLM 生命周期划分的三类根源 [1]\n\n- **数据层面**：预训练语料若为未经过滤的 web-scale 数据，包含不一致、偏见、过时或虚假信息，会直接影响模型可靠性，使模型学入错误知识，此类问题被归类为\"错误信息（misinformation）\" [1][4]。\n- **训练层面**：包括知识对齐不足、监督微调带来的\"讨好式\"偏差（sycophancy / alignment 问题），使模型倾向于生成符合用户期望而非事实的内容 [1]。\n- **推理层面**：解码与生成策略本身（如采样随机性、缺乏事实校验机制）也会诱发幻觉 [1]。\n\n### 3.2 按来源归因：提示主导 vs 模型主导\n\n近期实证研究用**提示敏感性（Prompt Sensitivity, PS）**和**模型变异性（Model Variability, MV）**两个指标区分幻觉来源 [4]：\n\n- **提示主导型**：结构不良、含糊、缺失或误导性的提示导致错误输出（PS 高、MV 低）[4]；\n- **模型主导型**：由模型架构、预训练数据分布或推理行为引发，即使提示质量良好，模型在特定领域仍稳定幻觉（PS 低、MV 高）[4]；\n- **混合来源**：提示与模型缺陷共同作用 [4]。\n\n### 3.3 规模扩大并不能消除幻觉\n\n规模更大、能力更强的模型并未消除幻觉，反而在特定情境下可能放大幻觉，倾向于输出\"自信的胡言乱语（confident nonsense）\"——答案流畅、格式工整但事实错误，从而掩盖了不确定性 [4]。\n\n### 3.4 幻觉的表现类型\n\n按表现可分为**事实性幻觉**（事实矛盾、事实编造）与**忠实性幻觉**（指令不一致、上下文不一致、逻辑不一致）[1]。这些类型分别对应数据缺陷、指令遵循失败与推理内部矛盾等不同成因——这一区分对理解 RAG 的能力边界很关键。\n\n---\n\n## 四、RAG 通过哪些机制减少幻觉\n\n### 4.1 核心机制：外部证据接地（grounding）\n\nRAG 最根本的降幻觉机制，是在生成前主动检索外部文档，把相关文本作为条件附加到提示中，使回答由检索到的证据支撑，而不再完全依赖预训练阶段固化的参数化知识。这直接针对幻觉的根源——训练数据不完整、噪声大、知识静态冻结、推理时缺乏可验证信息 [3][5]。RAG 因此被明确定位为\"为生成提供事实接地\"的范式 [5]。\n\n### 4.2 提升时效性与知识覆盖度\n\n由于不再依赖\"冻结\"的训练语料，RAG 可动态调用最新或领域专有知识，缓解因知识过时或缺失导致的错误陈述——这正是闭卷模型高幻觉率的主要来源之一。\n\n### 4.3 检索—增强—生成全链路的质量控制\n\n从工程角度看，降幻觉不是单点检索，而是贯穿各阶段的机制 [3]：\n\n- **查询改写（query rewriting）**：把模糊查询转为更可检索的形式，降低检索阶段因查询歧义导致的失败 [3]；\n- **检索优化**：MMR（最大边际相关性）、autocut（按相似度截断长尾）、递归检索（首轮不足才追加），目标是控制上下文噪声、提高 chunk 级相关性 [3]；\n- **输出护栏与引用/溯源**：要求回答给出引用、把输出与检索文本比对，或用第二个 LLM 交叉验证，以拦截与证据不符的生成 [3][5]；\n- **多证据融合与冲突处理**：如 MEGA-RAG 采用四阶段架构，含答案一致性与冲突证据评估模块，在无共识时回溯检索更多证据来澄清，从而减少\"单轮检索 + 无一致性检查\"造成的幻觉 [6]。\n\n### 4.4 负向拒答（negative rejection）\n\n训练或引导系统在检索上下文无用时明确表示\"不知道\"，而不是给出看似合理的猜测。Splunk 认为这是价值最高的行为之一，因为\"在不确定时乱猜\"的系统在所有环节都会乱猜 [3]。\n\n### 4.5 可解释性与可核查性的间接抑制\n\nRAG 输出可附信息来源，用户能比对原文核实，这既提升透明度，也形成对生成的约束 [3][5]。\n\n---\n\n## 五、RAG 的局限：降低而非消除幻觉\n\n### 5.1 检索阶段失败\n\n数据源本身不可靠、有偏或过时，检索到的文档质量差或与问题无关时，模型会\"基于错误证据正确生成\"，错误被放大 [5]；用户查询模糊会导致检索偏离，检索器策略与表征能力有限会造成低精度、低召回 [3][5]；即使知识库正确，系统也可能检索不到该知道的答案（向量检索存在盲区，需混合检索缓解）。\n\n### 5.2 生成阶段缺陷\n\n模型可能无视检索到的证据，或超出证据边界自由发挥（reader overgeneration）[3][5]；证据过多或互相矛盾时，容易出现上下文噪声、上下文冲突与\"中间迷失（lost in the middle）\"，把过时与更新信息以误导性方式拼接 [5]；未经专门训练时，模型无法判断自身知识边界，该表示不确定时照样给答案 [5]。\n\n### 5.3 成因是架构性的，提示工程修不好\n\nSplunk 强调，多数 RAG 失败源于检索缺口、上下文噪声、信息整合不完整，而不是模型推理能力；在检索—上下文管理环节出的问题，靠 prompt 无法触及 [3]。这也说明 RAG 的降幻觉效果高度依赖检索器与生成器的协同质量——对齐不佳时性能会明显下滑。\n\n### 5.4 不解决推理类\"忠实性幻觉\"\n\nRAG 提供事实接地，但不直接改善模型的内在推理过程；即使事实准确，模型仍可能在逻辑、常识推理上出错或前后不一致 [5]。换言之，RAG 主要对抗**事实性幻觉**，对**忠实性幻觉**（偏离用户指令、内部不自洽）作用有限 [1][5]。\n\n### 5.5 系统代价与安全风险\n\n检索带来延迟与成本开销，实时场景尤甚 [3]；存在 **RAG 投毒 / 误读源材料**风险——可能检索到\"事实正确但被断章取义\"的来源，或面对矛盾信息时无法判断哪方更可信，最终把多个来源细节融合成误导性回答 [5]；RAG 也未消除重新训练的需求，未消除模型误读数据的问题 [5]。\n\n### 5.6 评测困难\n\n同时衡量幻觉与 RAG 效果本身很难；准确诊断需要把检索质量与生成质量分离评估，否则无法判断幻觉来自检索噪声还是生成越界 [3]。\n\n---\n\n## 六、总结\n\nRAG 的定义可以概括为\"检索 + 增强 + 生成\"三段式的 AI 架构，其核心是把外部知识库接入生成流程，通过检索器、整合层与生成器的协作，在无需重新训练模型的前提下提升输出的准确性、时效性与可溯源性 [2][7][8]。\n\n它减少幻觉的机制是组合式的：**外部证据接地**把知识来源从参数转移到文档 [3][5]；**动态知识调用**缓解知识过时与缺失；**全链路质量控制**（查询改写、检索优化、输出护栏、多证据融合）压缩检索与生成两个环节的出错空间 [3][6]；**负向拒答**避免不确定时乱猜 [3]；**可溯源引用**形成外部约束 [3][5]。\n\n但这些机制的作用边界同样清晰：检索失败与生成缺陷会引入新的幻觉形态，模型内在推理不一致与知识边界判断问题超出 RAG 的能力范围 [5][6]。因此更准确的表述是：**RAG 把幻觉从\"知识缺失型\"部分转化为\"检索与整合质量型\"**，后者需要检索优化、多证据融合、拒答校准与输出验证等配套机制共同应对 [6]。\n\n---\n\n## 参考来源\n\n- [1] A Survey on Hallucination in Large Language Models: Principles, Taxonomy, Challenges, and Open Questions | alphaXiv — https://www.alphaxiv.org/abs/2311.05232\n- [2] 什么是 RAG（检索增强生成）？| IBM — https://www.ibm.com/cn-zh/think/topics/retrieval-augmented-generation\n- [3] How To Reduce Hallucinations in RAG Applications | Splunk — https://www.splunk.com/en_us/blog/artificial-intelligence/rag-hallucination-reduction.html\n- [4] Survey and analysis of hallucinations in large language models: attribution to prompting strategies or model behavior - PMC — https://pmc.ncbi.nlm.nih.gov/articles/PMC12518350\n- [5] RAG hallucination: What is it and how to avoid it — https://www.k2view.com/blog/rag-hallucination\n- [6] MEGA-RAG: a retrieval-augmented generation framework with multi-evidence guided answer refinement for mitigating hallucinations of LLMs in public health - PMC — https://pmc.ncbi.nlm.nih.gov/articles/PMC12540348\n- [7] Retrieval Augmented Generation (RAG) for LLMs | Prompt Engineering Guide — https://www.promptingguide.ai/research/rag\n- [8] RAG 101：揭秘检索增强生成流程 - NVIDIA 技术博客 — https://developer.nvidia.cn/blog/rag-101-demystifying-retrieval-augmented-generation-pipelines",
+    "elapsed_s": 56.4,
+    "sources": [
+      {
+        "citation_id": 1,
+        "title": "A Survey on Hallucination in Large Language Models: Principles, Taxonomy, Challenges, and Open Questions | alphaXiv",
+        "url": "https://www.alphaxiv.org/abs/2311.05232"
+      },
+      {
+        "citation_id": 2,
+        "title": "什么是 RAG（检索增强生成）？| IBM",
+        "url": "https://www.ibm.com/cn-zh/think/topics/retrieval-augmented-generation"
+      },
+      {
+        "citation_id": 3,
+        "title": "How To Reduce Hallucinations in RAG Applications | Splunk",
+        "url": "https://www.splunk.com/en_us/blog/artificial-intelligence/rag-hallucination-reduction.html"
+      },
+      {
+        "citation_id": 4,
+        "title": "Survey and analysis of hallucinations in large language models: attribution to prompting strategies or model behavior - PMC",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12518350"
+      },
+      {
+        "citation_id": 5,
+        "title": "RAG hallucination: What is it and how to avoid it",
+        "url": "https://www.k2view.com/blog/rag-hallucination"
+      },
+      {
+        "citation_id": 6,
+        "title": "MEGA-RAG: a retrieval-augmented generation framework with multi-evidence guided answer refinement for mitigating hallucinations of LLMs in public health - PMC",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12540348"
+      },
+      {
+        "citation_id": 7,
+        "title": "Retrieval Augmented Generation (RAG) for LLMs | Prompt Engineering Guide<!-- -->",
+        "url": "https://www.promptingguide.ai/research/rag"
+      },
+      {
+        "citation_id": 8,
+        "title": "RAG 101：揭秘检索增强生成流程 &#x2d; NVIDIA 技术博客",
+        "url": "https://developer.nvidia.cn/blog/rag-101-demystifying-retrieval-augmented-generation-pipelines"
+      }
+    ],
+    "citations": {
+      "total_refs": 83,
+      "unique_refs": 8,
+      "available_sources": 8,
+      "fabricated": [],
+      "fabricated_rate": 0.0
+    },
+    "stats": {
+      "prompt_tokens": 67292,
+      "completion_tokens": 7722,
+      "total_tokens": 75014,
+      "total_cost": 0.19635999,
+      "total_duration_ms": 116468,
+      "calls": 37,
+      "by_agent": {
+        "critic": {
+          "tokens": 3724,
+          "cost": 0.007508,
+          "duration_ms": 1474,
+          "calls": 1
+        },
+        "planner": {
+          "tokens": 298,
+          "cost": 0.000998,
+          "duration_ms": 1905,
+          "calls": 1
+        },
+        "researcher-1": {
+          "tokens": 20508,
+          "cost": 0.050045997,
+          "duration_ms": 35321,
+          "calls": 11
+        },
+        "researcher-2": {
+          "tokens": 15627,
+          "cost": 0.037638,
+          "duration_ms": 28593,
+          "calls": 10
+        },
+        "researcher-3": {
+          "tokens": 27651,
+          "cost": 0.066456,
+          "duration_ms": 33655,
+          "calls": 13
+        },
+        "writer": {
+          "tokens": 7206,
+          "cost": 0.033714,
+          "duration_ms": 15520,
+          "calls": 1
+        }
+      }
+    },
+    "judge": {
+      "relevance": 5,
+      "accuracy": 5,
+      "citation": 5,
+      "completeness": 5,
+      "structure": 5,
+      "summary": "报告紧扣RAG定义与降幻觉机制，完整覆盖检索文档、证据注入上下文、有据可依、降低编造四个关键点，引用均真实对应且支撑论断，结构清晰、层次分明。"
+    }
+  },
+  {
+    "id": "q4",
+    "question": "Transformer 的自注意力机制（self-attention）是如何工作的？",
+    "type": "research",
+    "status": "done",
+    "report": "自注意力机制让序列中的每个位置都能关注到其他所有位置：先将每个输入 token 的向量分别线性投影为 Query（Q）、Key（K）、Value（V）；再用 Q 与所有 K 做点积并除以 √d_k 缩放得到注意力分数，经 softmax 归一化为权重；最后用这些权重对 V 加权求和，得到该位置的输出。实际中并行地对所有位置计算（可多头并行），从而使模型能动态建模任意两位置之间的依赖关系。",
+    "elapsed_s": 2.2,
+    "sources": [],
+    "citations": {
+      "total_refs": 0,
+      "unique_refs": 0,
+      "available_sources": 0,
+      "fabricated": [],
+      "fabricated_rate": 0.0
+    },
+    "stats": {
+      "prompt_tokens": 227,
+      "completion_tokens": 125,
+      "total_tokens": 352,
+      "total_cost": 0.001454,
+      "total_duration_ms": 1957,
+      "calls": 1,
+      "by_agent": {
+        "planner": {
+          "tokens": 352,
+          "cost": 0.001454,
+          "duration_ms": 1957,
+          "calls": 1
+        }
+      }
+    },
+    "judge": {
+      "relevance": 5,
+      "accuracy": 5,
+      "citation": null,
+      "completeness": 5,
+      "structure": 5,
+      "summary": "报告准确完整地解释了Q/K/V、缩放点积注意力、softmax权重、V加权求和以及并行与多头机制，紧扣问题且结构清晰。"
+    }
+  },
+  {
+    "id": "q5",
+    "question": "2024 年大语言模型领域有哪些重要进展？",
+    "type": "research_time",
+    "status": "done",
+    "report": "# 2024 年大语言模型领域重要进展报告\n\n## 一、总体判断\n\n2024 年是 LLM 发展的转折之年：能力重心从“参数规模扩张”转向“推理时计算 + 可验证奖励强化学习”，并以推理模型（o1 系列）、原生多模态（GPT-4o）、超长上下文普及、智能体工程化（computer use / MCP）四条主线共同确立了后续发展方向 [1][2]。与此同时，模型能力提升伴随价格下探，行业应用从“技术竞赛”转向“需求驱动”，2024 年被认为是中国企业真正开始使用大模型并获取业务价值的一年 [1][4][5]。\n\n## 二、能力维度的标志性进展\n\n### 1. 推理：从“预训练缩放”转向“推理时计算缩放”\n\n2024 年最重大的范式转变是推理模型（reasoning models）的出现。2024 年 9 月，OpenAI 发布 o1 系列（o1-preview），首次把“长思维链 + 大规模强化学习”产品化：模型在作答前生成冗长的内部推理链并自我纠错，在数学、代码、科学等基准上显著超越 GPT-4o [1][2]。具体差距为：2024 AIME 数学竞赛中 GPT-4o 单次仅解出约 12%，而 o1 单次达 74%、多次达 93%；在 IMO 预选赛题上 GPT-4o 约 13%、o1 约 83% [1][2]。该现象被概括为“推理时计算缩放（test-time compute scaling）”，即继预训练缩放、上下文缩放之后的第三条缩放轴，模型性能随推理预算增加而单调提升 [1][2]。2024 年 12 月，OpenAI 又预览了 o3，展示高算力档位下的极限性能；同期 Google、DeepSeek 也发布了各自的推理模型 [1]。\n\n### 2. 多模态：从“拼接式”走向“原生统一”\n\n多模态研究主线由“视觉编码器 + 语言模型”的拼接式，转向单一网络的原生统一处理 [2]。标志性事件是 GPT-4o（2024 年 5 月）：以单一网络原生处理文本、音频、图像，实现约 320ms 的语音对话延迟，验证了端到端多模态预训练的可行性 [2][3]。2024 年成为多模态 LLM 主流化的一年——主要厂商的模型普遍能处理图像、部分支持音频与视频 [1]。开源侧，Qwen2.5-VL、InternVL 系列在视觉定位、文档理解上持续逼近闭源水平；语音方向的 Moshi（Kyutai，2024）提供了全双工语音对话的开源基线 [2]。视频生成则进入“世界模型”叙事：Sora 技术报告（OpenAI，2024 年 2 月）明确提出“视频生成模型作为世界模拟器” [2]。\n\n### 3. 长上下文：10 万+ token 成为标准能力\n\n2024 年，大上下文窗口成为前沿模型的标配能力：可处理远超 10 万 token 的文本量（相比之下 GPT-3 仅 2048 token），并配套出现 prompt caching（缓存前缀计算以加速长提示复用）等工程优化 [1]。长上下文推理也成为区分厂商的竞争维度，例如 Google Gemini 以超长上下文推理见长，可用于文档级规划；为应对长上下文任务，学界还提出 Chain-of-Agents（CoA）等多智能体协作框架 [2]。\n\n### 4. 智能体：从演示走向可度量的工程对象\n\n2024 年 AI Agent 从概念验证转向可度量的工程与科研对象 [2]。关键标志性事件包括：\n\n- **计算机使用（computer use）**：Anthropic 于 2024 年 10 月随 Claude 3.5 Sonnet 新版发布 computer use 能力（截屏→定位→点击/键入循环），在 OSWorld 基准初始得分约 14.9%，绝对值虽低，但首次验证了端到端通用 GUI 操作路径 [2]。\n- **工具调用协议标准化**：Anthropic 于 2024 年 11 月推出 MCP（Model Context Protocol），用于规范“模型↔工具”的互操作 [2]。\n- **评测体系建立**：OSWorld、AndroidWorld、WebArena 构成 GUI 智能体基准族，τ-bench 引入动态“模拟用户”测量对话—工具混合场景的策略遵从，使智能体能力可被客观度量 [2]。\n\n## 三、代表性模型发布（时间线）\n\n2024 年是模型密集发布的年份，几乎每个重要供应商都推出多模态模型 [5]。以下按时间线梳理，并与前文能力维度交叉引用，避免重复展开。\n\n**1—4 月：竞争开局**\n- **智谱 AI GLM-4**（1 月 16 日）：支持更长上下文、多模态与个性化智能体定制，性能逼近 GPT-4，降低了中文大模型的使用门槛 [5]。\n- **OpenAI Sora**（2 月 16 日）：文生视频模型，可生成最长一分钟高清视频，将 AIGC 推向大众视野 [5]。\n- **Anthropic Claude 3 系列**（3 月 4 日）：含 Haiku/Sonnet/Opus 三档，Opus 在多项基准领先，具备多模态视觉与 200K 上下文 [5]。\n- **KimiChat 长上下文模型**（3 月）：据 [5] 记载支持高达 200 万字符上下文。\n- **Google Gemini 1.5 Pro**（4 月）：支持图像、音频和视频输入 [5]。\n- **Meta Llama 3**：据 [5] 记载于 2024 年 4 月发布，后续于 9 月推出 Llama 3.2 视觉模型（11B/90B）。\n\n**5—8 月：旗舰与价格战**\n- **OpenAI GPT-4o**（5 月）：旗舰级原生多模态模型，统一架构原生处理文本、语音、图像，可接受混合模态输入并生成图像，大幅降低延迟与部署复杂度；同时推出高性价比的 GPT-4o mini，据 [1][5] 载其成本约为 GPT-3.5 Turbo 的 60%。5 月起 GPT-4o 向所有用户免费开放 [5]。\n- **Anthropic Claude 3.5 Sonnet**（6 月 20 日）：速度是 Claude 3 Opus 的两倍、成本仅为其五分之一，在阅读、编程、数学、视觉等多项测试中优于 GPT-4o 与 Gemini 1.5 Pro；同步推出 Artifacts 功能，支持在对话旁实时生成、编辑交互式代码/文档 [5]。\n\n**9—12 月：推理模型与多模态扩展**\n- **OpenAI o1 系列**（9 月）：以“结构化内部推理”为特征的推理模型，o1-preview 在数学（AIME 2024）、编程（CodeForces）、博士级科学问题上超越 GPT-4o [3]（能力细节见第二节）。\n- **10—12 月**：OpenAI 音频实时输入输出、Hugging Face SmolVLM、Amazon Nova（图像与视频）等相继发布 [5]。\n\n**价格趋势（需区分输入/输出）**：模型能力提升的同时价格总体下探，但具体数字需区分输入与输出 token。据 [5] 记载，GPT-4o 定价为 2.50 美元/百万 token（该文表述未区分输入/输出，且“比 GPT-4 便宜 12 倍”的说法未在可核验一手来源中确认）；Gemini 1.5 Flash 据 [5] 低至 0.075 美元。上述具体价格数字来自二手汇编 [5]，未经一手核验，引用时应以各厂商官方定价页为准。\n\n**格局**：据 [5]，截至 2024 年美国厂商（ChatGPT、Gemini、Claude、Nova、Llama 系列）居主导；开源与专有模型的性能差距因 Meta、Mistral、阿里等开源模型而显著缩小。\n\n## 四、行业应用落地\n\n**整体判断**：2023 年是中国大模型“元年”，2024 年则是“企业真正开始使用大模型技术并从业务中获得价值的一年” [4]。\n\n**行业分布**（据 [4] 汇编，未经一手核验）：2024 年落地案例中，金融（36.7%）占比最大，其中银行业最高（15.4%）；其次为制造（14.7%）、IT/互联网（12.2%）、消费品与零售（8.1%）、能源（6.0%）。\n\n**场景分布**（据 [4] 汇编，未经一手核验）：智能客服（13.6%）占比最大，其次为知识助手（10.6%）、数据分析（9.2%）、员工办公助手（7.6%）、虚拟助理（7.6%）。\n- 金融业细分场景已高度具体化：银行业梳理出 20 个高价值场景（知识助手、编码助手、信贷审批、反洗钱报告、合规审查等），证券业 17 个场景（投研助手、风控合规、智能投顾等）[4]。\n- 用例分为“生产力提升型”（办公助手、代码助手）、“差异化型”（客服助手、销售助手）和“变革型”（智能理赔、药物研发）三类 [4]。\n\n**市场与商业模式**（据 [4] 汇编，未经一手核验）：\n- 中国行业大模型市场规模 2023 年为 105 亿元，2024 年预计达 165 亿元，同比增长 57%；需求从“技术竞赛”转向“行业需求驱动”，多模态与 Agent 深入发展 [4]。\n- 企业级大模型 AI 应用解决方案市场 2024 年规模达 386 亿元，预计 2029 年达 2394 亿元（CAGR 44%）。原因在于“轻资产落地+场景化适配”模式帮助企业无需自建庞大技术团队即可获得 AI 能力 [4]。\n- 落地案例中，国资央企（中国电信、中国移动、国家电网、中国石油等）是重要推动者，“AI+专项行动”持续推进 [4]。\n\n**落地挑战**（据 [4] 汇编，未经一手核验）：IDC 调研显示，算力资源不足、模型训练成本高、推理成本高是三大挑战；企业普遍期待 1—3 倍 ROI，但实际多数低于 50%。\n\n## 五、资料缺口与局限\n\n本报告部分事实（尤其是模型发布的具体日期、价格数字、市场份额与行业落地统计）依赖二手汇编来源 [4][5]，未经一手官方来源逐项核验；引用时已在相应位置加注“据 [4]/[5] 汇编”。子问题 1（架构与训练方法突破）因研究步数耗尽未完成，故本报告对架构层面的讨论主要依托能力维度的综述性描述 [1][2]，未展开更细的技术细节。Anthropic computer use 的 OSWorld 得分、GPT-4o 具体定价、KimiChat 上下文长度等数字，建议以厂商官方博客/定价页/发布公告为准。\n\n## 参考来源\n\n- [1] A dizzying year for language models: 2024 in review | Dataiku Blog — https://www.dataiku.com/blog/a-dizzying-year-for-language-models-2024-in-review\n- [2] AI Agent 与大语言模型（LLM）最新科研进展技术综述 - stardsd - 博客园 — https://www.cnblogs.com/sddai/p/22181149\n- [3] 最新「大模型简史」整理！从Transformer（2017）到DeepSeek-R1（2025） - 智源社区 — https://hub.baai.ac.cn/view/43825\n- [4] 30+份大模型最新报告：大模型落地进展、场景价值及最佳实践 | 沙丘社区 — https://www.shaqiu.cn/article/zZM5V41MYRxb\n- [5] Docs — https://docs.feishu.cn/article/wiki/EPAAwNtdsitzqKkImVGc5lCVnrh",
+    "elapsed_s": 91.0,
+    "sources": [
+      {
+        "citation_id": 1,
+        "title": "A dizzying year for language models: 2024 in review | Dataiku Blog",
+        "url": "https://www.dataiku.com/blog/a-dizzying-year-for-language-models-2024-in-review"
+      },
+      {
+        "citation_id": 2,
+        "title": "AI Agent 与大语言模型（LLM）最新科研进展技术综述 - stardsd - 博客园",
+        "url": "https://www.cnblogs.com/sddai/p/22181149"
+      },
+      {
+        "citation_id": 3,
+        "title": "最新「大模型简史」整理！从Transformer（2017）到DeepSeek-R1（2025） - 智源社区",
+        "url": "https://hub.baai.ac.cn/view/43825"
+      },
+      {
+        "citation_id": 4,
+        "title": "30+份大模型最新报告：大模型落地进展、场景价值及最佳实践 | 沙丘社区",
+        "url": "https://www.shaqiu.cn/article/zZM5V41MYRxb"
+      },
+      {
+        "citation_id": 5,
+        "title": "Docs",
+        "url": "https://docs.feishu.cn/article/wiki/EPAAwNtdsitzqKkImVGc5lCVnrh"
+      }
+    ],
+    "citations": {
+      "total_refs": 62,
+      "unique_refs": 5,
+      "available_sources": 5,
+      "fabricated": [],
+      "fabricated_rate": 0.0
+    },
+    "stats": {
+      "prompt_tokens": 123501,
+      "completion_tokens": 13580,
+      "total_tokens": 137081,
+      "total_cost": 0.355642,
+      "total_duration_ms": 153955,
+      "calls": 43,
+      "by_agent": {
+        "critic": {
+          "tokens": 7565,
+          "cost": 0.020326,
+          "duration_ms": 8045,
+          "calls": 2
+        },
+        "planner": {
+          "tokens": 311,
+          "cost": 0.001132,
+          "duration_ms": 2034,
+          "calls": 1
+        },
+        "researcher-1": {
+          "tokens": 32798,
+          "cost": 0.068314,
+          "duration_ms": 35213,
+          "calls": 13
+        },
+        "researcher-2": {
+          "tokens": 35779,
+          "cost": 0.081032,
+          "duration_ms": 31274,
+          "calls": 12
+        },
+        "researcher-3": {
+          "tokens": 41476,
+          "cost": 0.09452599,
+          "duration_ms": 39387,
+          "calls": 12
+        },
+        "writer": {
+          "tokens": 19152,
+          "cost": 0.090312004,
+          "duration_ms": 38002,
+          "calls": 3
+        }
+      }
+    },
+    "judge": {
+      "relevance": 5,
+      "accuracy": 4,
+      "citation": 4,
+      "completeness": 5,
+      "structure": 5,
+      "summary": "报告紧扣2024年LLM进展，完整覆盖多模态、长上下文、Agent与开源生态四大要点，结构清晰；但部分日期与价格数字依赖二手来源并已自述未核验，个别引用标注略显牵强，准确性略有折扣。"
+    }
+  },
+  {
+    "id": "q6",
+    "question": "什么是大语言模型（LLM）？",
+    "type": "simple",
+    "status": "done",
+    "report": "大语言模型（Large Language Model，LLM）是一种基于海量文本数据训练、拥有数十亿至数千亿参数的人工智能模型，通常采用 Transformer 架构，通过预测下一个词（token）来学习语言的统计规律，从而具备文本生成、理解、翻译、问答等通用能力。代表性模型包括 GPT、Claude、Llama 等。",
+    "elapsed_s": 2.1,
+    "sources": [],
+    "citations": {
+      "total_refs": 0,
+      "unique_refs": 0,
+      "available_sources": 0,
+      "fabricated": [],
+      "fabricated_rate": 0.0
+    },
+    "stats": {
+      "prompt_tokens": 223,
+      "completion_tokens": 95,
+      "total_tokens": 318,
+      "total_cost": 0.001206,
+      "total_duration_ms": 1843,
+      "calls": 1,
+      "by_agent": {
+        "planner": {
+          "tokens": 318,
+          "cost": 0.001206,
+          "duration_ms": 1843,
+          "calls": 1
+        }
+      }
+    },
+    "judge": {
+      "relevance": 5,
+      "accuracy": 5,
+      "citation": null,
+      "completeness": 5,
+      "structure": 4,
+      "summary": "该报告准确、简洁地定义了LLM，覆盖了参数规模、预训练、Transformer架构和文本生成与理解等全部关键点，但结构上以一段式呈现，层次感稍弱。"
+    }
+  },
+  {
+    "id": "q7",
+    "question": "向量检索中 HNSW 和 IVF 两种索引的原理和区别是什么？",
+    "type": "research",
+    "status": "done",
+    "report": "# HNSW 与 IVF 向量索引：原理与区别\n\n## 一、总览\n\nHNSW 和 IVF 是当前向量检索中最常用的两类近似最近邻（ANN）索引，但它们的底层哲学截然不同：**HNSW 是\"图\"路线**——用多层邻近图导航，靠边走；**IVF 是\"划分\"路线**——把空间切成簇，查询时只扫少数簇，靠\"分而治之\"。理解这一根本差异，是理解两者在召回、延迟、内存、构建成本上所有取舍的前提。\n\n---\n\n## 二、HNSW 的工作原理\n\n### 2.1 基本定位与思想来源\n\nHNSW（Hierarchical Navigable Small World，分层可导航小世界）是一种基于图结构的 ANN 算法，融合了两项技术：**概率跳表（probability skip list）** 的多层结构思想，以及 **NSW（可导航小世界图）** 的邻近图思想 [3]。其核心创新在于：显式选择入口点、将链接按\"长度尺度\"分离到不同层、并使用启发式邻居选择 [4]。\n\n### 2.2 图结构与分层机制\n\n- **多层图**：不同于 NSW 只用单层图，HNSW 构建一个图层次结构，每一层本身都是一个 NSW 图，各自独立搜索 [4]。\n- **上疏下密、上长下短**：顶层节点极少、链接最长（跨越空间的大跳），越往下节点越多、链接越短，底层（第 0 层）包含**所有**节点和最短链接 [3][4]。分层把链接按长度尺度分离，上层负责快速\"粗定位\"、底层负责\"精定位\" [4]。\n- **节点的层级分配**：每个向量插入时按概率函数（截断几何分布／指数分布，由层级乘数 $m_L \\approx 1/\\ln(M)$ 归一化）随机抽取一个最高层 $l$，节点被加入该层及其**所有下层** [3][4]。由于概率按层递减，绝大多数节点只出现在第 0 层——以 M=32 为例，约 96.9% 的节点只落在第 0 层 [3]。这直接借用了跳表\"概率性升层\"的思路 [3]。\n- **度数上限**：每个节点的邻居数受 $M$ 限制，第 0 层另有 $M_{max0}$；这种度数上限是保证对数级搜索复杂度的关键 [3]。\n\n### 2.3 搜索过程\n\n搜索是\"自顶向下逐层下钻的贪心路由\" [3][4]：\n\n1. **入口定位**：从顶层唯一的入口点（enter point）开始 [4]；\n2. **高层贪心（粗搜）**：在当前层沿边贪心移动到离查询向量更近的邻居，直到到达该层局部最小值 [3][4]；\n3. **逐层下钻**：从该局部最小值转到下一层对应节点作为新入口，重复贪心搜索，逐层重复 [4]；\n4. **底层精搜**：到达第 0 层后，以宽度为 `ef_search` 的候选队列做更全面的邻域扩展（beam search），取最近的 Top-K 作为结果 [4]。\n\n\"稀疏高层大步跳 + 稠密底层细搜\"的结合带来近似对数的搜索复杂度与高召回 [3][4]。\n\n### 2.4 插入（构建）过程\n\nHNSW 是增量式构建，向量逐个插入 [3]。以插入向量 q、抽到层级 $l$ 为例 [3][4]：\n\n1. **分配层级** $l$（按上述概率分布）；\n2. **第一阶段（粗定位，ef=1）**：从顶层入口贪心遍历，每层只保留 1 个最近邻，找到局部最小值后下移，直到抵达插入层 $l$；\n3. **第二阶段（建立链接）**：把候选列表宽度提升到 `ef_construction`，在 $l$ 层及以下各层搜索出更精确的近邻；从中选出 $M$ 个最近者作为 q 的邻居并**双向连边**，同时用启发式剪枝把超限度数控制在 $M_{max}$/$M_{max0}$ 以内；\n4. 重复直到第 0 层，插入终止于到达第 0 层的局部最小值。\n\n### 2.5 关键参数\n\n- `M`：每层最大连接数；越大召回越高、内存近似线性上升 [6]。\n- `ef_construction`：构建时候选队列宽度；越大图质量越好但构建越慢 [6]。\n- `ef_search`：查询时候选队列宽度；越大召回越高但延迟上升 [6]。\n\n---\n\n## 三、IVF 的工作原理\n\n### 3.1 核心思想与总体结构\n\nIVF（Inverted File，倒排文件）索引把向量空间划分成若干簇（cell），查询时只搜索最可能的少数簇，从而大幅降低暴力全量扫描的代价 [1]。结构上包含两个组件：一个**粗量化器（coarse quantizer）**，用于把向量映射到最近的簇质心；以及一组**倒排列表（inverted lists / posting lists）**，每个簇对应一条倒排列表，存储分配给该簇的所有向量 [1]。Faiss 将这类基于划分、允许多探（multi-probing）的方法称为\"cell-probe methods\" [5]。\n\n### 3.2 粗聚类与建库\n\n构建时先对数据集运行聚类算法（通常为 **k-means**）得到固定数量的簇质心，数量记为 **`nlist`**（即倒排列表个数），每个质心是簇的代表中心 [1]。随后每个数据向量被分配给距离最近的质心，归入对应倒排列表 [1][5]。Faiss 中通常用一个 Flat 索引作为粗量化器，`train` 方法把质心加入该 Flat 索引 [5]。`nlist` 的经验取值量级为 **`nlist = C·√n`**（C 约为 10），以平衡\"分配阶段计算质心距离的代价\"与\"查询时解析倒排列表的代价\" [5]。\n\n### 3.3 查询过程与 nprobe 参数\n\n查询向量 q 到来后 [1][5]：\n\n1. **粗搜索**：将 q 与所有 `nlist` 个质心比较（因 `nlist ≪ N`，这一步很快），找出最近的若干质心；\n2. **选择 top-nprobe 簇**：选出最近的 **`nprobe`** 个质心，`nprobe` 决定实际扫描多少个簇（搜索广度）；\n3. **簇内精查**：只扫描这 `nprobe` 条倒排列表中的向量，做精确距离计算，返回 top-k 结果。\n\n`nprobe` 是**速度与召回率之间的调节参数**：值越大，搜索的簇越多，召回越高，延迟也越高；它是查询时指定的参数，便于度量速度—精度权衡 [5]。实践上，调节 `nprobe` 常可达到精确搜索约 **90–95% 的召回率**，而速度快几个数量级 [1]。在 Milvus 的 IVF_FLAT 中，`nprobe` 取值范围为 [1, nlist]，默认值为 8 [7]。\n\n### 3.4 量化变体\n\n- **IVF-FLAT**：倒排列表存储原始（未压缩）向量，簇内做精确距离计算；内存为 O(N·d) [1][5]。\n- **IVF-PQ（IVFADC）**：在粗量化之上叠加**乘积量化（PQ）**做细量化。向量以\"相对质心的残差 r = x − c\"编码：PQ 把残差切成 m 个子向量，每个子向量用码本索引表示（nbits=8 时为一字节），因此每个向量只需 m 字节而非原始 4d 字节；存储形式为 (簇 id, m 字节码) [5]。Faiss 的 `IndexIVFPQ` 参数包括 quantizer、d、nlists、M（子量化器数）、nbits，每向量字节数为 `ceil(M·nbits/8)+8` [5]。这里有两个调节杠杆：**`nprobe`** 用扫描时间换召回，**`m`（子向量数）** 用内存换召回 [5]。\n- **IVF-PQR（IVFADC+R）**：在 IVF-PQ 基础上增加基于编码的重排序（re-ranking）阶段 [5]。\n- **其他**：`IndexIVFFlat` 可接受任意索引作为粗量化器（如用 HNSW 作为粗量化器加速簇分配）[5]；此外还存在标量量化等变体 [5]。\n\n### 3.5 复杂度与适用场景\n\n建库时间约 O(N × iterations × k)，查询时间约 O(nprobe × N/nlist × d) [1][5]。IVF 适合**对速度敏感且数据本身有自然聚类**的场景，聚类可有效缩小搜索空间；对均匀分布的数据效果较差，常与乘积量化结合以节省内存 [1][5]。百万级向量、合理设置 `nlist` 的 IVF 索引可在 CPU 上以毫秒级响应查询 [1]。\n\n---\n\n## 四、HNSW 与 IVF 的区别与取舍\n\n### 4.1 召回率\n\n- **HNSW 开箱召回更高**：默认参数下即可达到 95%+ 召回；通过提高 `efSearch`（以及 `M`、`efConstruction`）可逼近 0.99 以上，上限更高 [2][6]。\n- **IVF 召回依赖调参**：召回高度依赖 `nlist`/`nprobe`，需探测更多列表才能达到高召回；存在\"单元边界漏检\"问题——真近邻若落在未被探测的 Voronoi 单元中就会被漏掉 [2][6]。\n- 基准实测（10M 规模）：HNSW(M=32, ef=128) Recall@10 = 0.982，HNSW(M=64, ef=256) = 0.995；IVF-Flat(nlist=1024, nprobe=32) = 0.961，nprobe=128 时升至 0.988；IVF-PQ 约 0.924，明显低于 HNSW [2]。\n- 重要提醒：**调参得当的 IVF 可以超过默认配置的 HNSW**，调参投入比算法选择本身更关键 [2]。\n\n### 4.2 查询延迟\n\n- **HNSW**：图遍历复杂度约 O(log n)，低延迟与高召回兼具，单线程 QPS 高（≈1,850 QPS，P95 2.1ms），是\"读多、低延迟\"场景首选 [2][6]。\n- **IVF**：延迟约 O(probes × cluster_size)，`nprobe` 直接以延迟换召回；不加量化时 IVF-Flat 绝对延迟可极低（P95 1.4ms，3,200 QPS），但召回较低；配合 PQ 后可达最高吞吐（8,500～12,000 QPS，亚毫秒级）[2]。\n- 结论：**在同等召回水平下 HNSW 通常更快**，IVF 的优势更多体现在量化后的吞吐与绝对延迟 [2]。\n\n### 4.3 内存占用\n\n- **HNSW 内存开销大**：约为原始向量的 2–5 倍（图边结构 \"edge-heavy\"），25M 规模下可达 82–156 GB [2][6]。\n- **IVF 内存高效**：IVFFlat 约为原始向量的 1.1 倍；配合 PQ 可降至 1/10–1/20（25M 时仅 8.2 GB vs HNSW 156 GB）[2][6]。\n- 缓解手段：HNSW + 二值量化/半精度可显著压缩图内存 [6]。\n\n### 4.4 构建成本\n\n- **IVF 构建快**：IVF-Flat 比 HNSW 快 3–10 倍（1M 向量：秒到分钟 vs HNSW 的分到小时）；25M 规模下 IVF-Flat 45 分钟 vs HNSW 3.1–6.2 小时 [2][6]。\n- **HNSW 构建重**：需构建多层图，`efConstruction` 越高图质量越好、耗时越长；但 pgvector 0.6.0 起支持并行构建，可显著缩短墙钟时间 [6]。\n- **更新韧性差异**：HNSW 插入便宜、无需重建；IVF 在数据变化后分布漂移、召回下降，需周期性重训/重建索引 [2][6]。\n\n### 4.5 适用场景取舍\n\n| 维度 | 倾向 IVF | 倾向 HNSW |\n|---|---|---|\n| 内存紧张 | ✅（配 PQ/OPQ） | ❌ |\n| 高频更新/在线写入 | ⚠️ 需压缩重建 | ✅ 插入便宜 |\n| 低延迟下最高召回 | ⚠️ 需提高 nprobe + 重排 | ✅ |\n| 超大规模（50M+/亿级） | ✅ | ⚠️ 内存不可行 |\n| 冷启动/快速建索引 | ✅ IVF-Flat | ❌ |\n\n- **选 HNSW 的情形**：动态语料、需要高召回 + 低延迟、查询分布偏斜/尾部重要、可接受额外 RAM、希望平滑在线插入；一般 <10M 向量、>50k 向量的活跃写入场景默认 HNSW [2][6]。\n- **选 IVF 的情形**：数据量大且基本静态（目录、图像库）、内存预算紧、需严格延迟 SLO、可按列表分片并定期重训；50M+ 向量或构建时间本身是关键约束时 [2][6]。\n- **混合方案**：IVF-HNSW-PQ 折中，兼顾接近 HNSW 的召回与 IVF 级内存（25M 时 12 GB、5,800 QPS、recall 0.963）[2]。\n\n### 4.6 核心原则\n\n不存在\"万能索引\"，本质是在**召回—延迟—内存（+构建/维护成本）三角形**中定位：提高召回需更多候选（加延迟）或更丰富索引（加内存）；降延迟要减少候选（损召回）；省内存要压缩向量（通常损召回）[2][6]。应基于 SLO 选定索引后，再调各自的关键杠杆：IVF 用 `nprobe`，HNSW 用 `efSearch`（辅以 `M`）[2][6]。\n\n---\n\n## 五、总结\n\n- **HNSW**：多层邻近图 + 概率跳表分层。查询时自顶向下贪心路由、底层束搜索；插入时概率赋层、贪心定位、按 `ef_construction`/`M` 连边并剪枝。优点是高召回、低延迟、支持平滑在线插入；代价是内存大（原始向量的 2–5 倍）、构建慢。\n- **IVF**：k-means 粗聚类 + 倒排列表。查询时先粗搜质心、再选 top-`nprobe` 簇做精查；可通过 PQ 等量化大幅压缩内存。优点是内存省、构建快、量化后吞吐极高；代价是召回依赖调参、有单元边界漏检、数据漂移后需重训。\n- **选型**：内存敏感、超大规模、静态数据选 IVF（配 PQ）；低延迟高召回、动态语料选 HNSW；两者也可组合（如 HNSW 作 IVF 的粗量化器，或 IVF-HNSW-PQ 混合）以折中。\n\n---\n\n## 参考来源\n\n- [1] Inverted File Index (IVF) in Vector Similarity Search — https://www.velodb.io/glossary/inverted-file-index-in-vector-similarity-search\n- [2] HNSW vs IVF: Vector Index Benchmarks for Production Similarity Search | Brahim Bouine — https://www.brahimbouine.com/blog/vector-index-hnsw-ivf-benchmarks\n- [3] Hierarchical Navigable Small Worlds (HNSW) | Pinecone — https://www.pinecone.io/learn/series/faiss/hnsw\n- [4] Understand HNSW for Vector Search - Milvus Blog — https://milvus.io/blog/understand-hierarchical-navigable-small-worlds-hnsw-for-vector-search.md\n- [5] Faiss indexes · facebookresearch/faiss Wiki · GitHub — https://github.com/facebookresearch/faiss/wiki/Faiss-indexes\n- [6] HNSW vs IVFFlat: How to Choose the Right Vector Index — https://bigdataboutique.com/blog/hnsw-vs-ivfflat-how-to-choose-the-right-vector-index\n- [7] IVF_FLAT | Milvus Documentation — https://milvus.io/docs/zh/ivf-flat.md",
+    "elapsed_s": 66.6,
+    "sources": [
+      {
+        "citation_id": 1,
+        "title": "Inverted File Index (IVF) in Vector Similarity Search",
+        "url": "https://www.velodb.io/glossary/inverted-file-index-in-vector-similarity-search"
+      },
+      {
+        "citation_id": 2,
+        "title": "HNSW vs IVF: Vector Index Benchmarks for Production Similarity Search | Brahim Bouine",
+        "url": "https://www.brahimbouine.com/blog/vector-index-hnsw-ivf-benchmarks"
+      },
+      {
+        "citation_id": 3,
+        "title": "Hierarchical Navigable Small Worlds (HNSW) | Pinecone",
+        "url": "https://www.pinecone.io/learn/series/faiss/hnsw"
+      },
+      {
+        "citation_id": 4,
+        "title": "Understand HNSW for Vector Search\n - Milvus Blog",
+        "url": "https://milvus.io/blog/understand-hierarchical-navigable-small-worlds-hnsw-for-vector-search.md"
+      },
+      {
+        "citation_id": 5,
+        "title": "Faiss indexes · facebookresearch/faiss Wiki · GitHub",
+        "url": "https://github.com/facebookresearch/faiss/wiki/Faiss-indexes"
+      },
+      {
+        "citation_id": 6,
+        "title": "HNSW vs IVFFlat: How to Choose the Right Vector Index",
+        "url": "https://bigdataboutique.com/blog/hnsw-vs-ivfflat-how-to-choose-the-right-vector-index"
+      },
+      {
+        "citation_id": 7,
+        "title": "IVF_FLAT | Milvus Documentation",
+        "url": "https://milvus.io/docs/zh/ivf-flat.md"
+      },
+      {
+        "citation_id": 8,
+        "title": "https://khoury.northeastern.edu/home/pandey/courses/cs7270/fall25/papers/vectordb/HNSW.pdf",
+        "url": "https://khoury.northeastern.edu/home/pandey/courses/cs7270/fall25/papers/vectordb/HNSW.pdf"
+      }
+    ],
+    "citations": {
+      "total_refs": 88,
+      "unique_refs": 7,
+      "available_sources": 8,
+      "fabricated": [],
+      "fabricated_rate": 0.0
+    },
+    "stats": {
+      "prompt_tokens": 72810,
+      "completion_tokens": 8998,
+      "total_tokens": 81808,
+      "total_cost": 0.217604,
+      "total_duration_ms": 133476,
+      "calls": 37,
+      "by_agent": {
+        "critic": {
+          "tokens": 4327,
+          "cost": 0.008714,
+          "duration_ms": 1297,
+          "calls": 1
+        },
+        "planner": {
+          "tokens": 329,
+          "cost": 0.001246,
+          "duration_ms": 2356,
+          "calls": 1
+        },
+        "researcher-1": {
+          "tokens": 30623,
+          "cost": 0.072016,
+          "duration_ms": 46175,
+          "calls": 13
+        },
+        "researcher-2": {
+          "tokens": 18480,
+          "cost": 0.046488002,
+          "duration_ms": 39594,
+          "calls": 11
+        },
+        "researcher-3": {
+          "tokens": 19610,
+          "cost": 0.049432002,
+          "duration_ms": 28307,
+          "calls": 10
+        },
+        "writer": {
+          "tokens": 8439,
+          "cost": 0.039708,
+          "duration_ms": 15747,
+          "calls": 1
+        }
+      }
+    },
+    "judge": {
+      "relevance": 5,
+      "accuracy": 5,
+      "citation": 5,
+      "completeness": 5,
+      "structure": 5,
+      "summary": "报告完整准确地阐述了HNSW分层图与IVF聚类倒排的原理、召回与速度权衡及适用场景，引用真实充分且结构清晰，几乎无改进空间。"
+    }
+  },
+  {
+    "id": "q8",
+    "question": "如何评估一个 RAG（检索增强生成）系统的效果？",
+    "type": "research",
+    "status": "done",
+    "report": "# 如何评估一个 RAG（检索增强生成）系统的效果？\n\n## 一、结论先行：评估的基本范式\n\n评估 RAG 不能只看“最终答案好不好”，而应采用**分层、分阶段、离线与在线闭环**的评估体系：把系统拆成检索端与生成端分别打分以定位故障来源，再用端到端指标与线上监控验证真实效果 [5][9][1][4]。核心逻辑是——检索端指标回答“有没有找到正确信息”，生成端指标回答“有没有恰当使用这些信息”，Context 类指标横跨两层做诊断 [5][8][9]。\n\n---\n\n## 二、量化指标：定义与适用场景\n\n### 2.1 检索端指标\n\n| 指标 | 定义 | 适用场景 |\n|---|---|---|\n| **Precision@K** | 前 K 个结果中相关项所占比例，衡量上下文窗口内的信噪比 [5] | 控制噪声、避免无关信息诱发幻觉 [5] |\n| **Recall@K** | 全部相关文档中被前 K 结果覆盖的比例，衡量完整性 [5] | 高杠杆指标：recall@10 若低于阈值，下游调优基本无效，因为生成器根本没看到正确上下文 [1] |\n| **MRR** | 只看**第一个**相关结果的位置（排名 1→1.0、2→0.5、5→0.2）[1] | “找到一条最相关结果即可、位置越靠前越好”的场景 [1] |\n| **MAP** | 考虑全部相关文档位置的精确率均值 | 问题涉及**多个相关方面**时对排序质量更敏感 [5] |\n| **nDCG@K** | 归一化折损累积增益，同时考虑**分级相关性**与**排序位置**：同一高相关文档排第 1 比排第 8 贡献更大 [1][5] | 相关性有强弱之分（能直接回答的片段优于泛泛提及的片段）时的排序质量评估 [5] |\n\n关键权衡：Precision@K 与 Recall@K 互相制约，增大 K 提升召回但降低精确率；MRR 较朴素，nDCG 能同时捕捉“相关文档排位过低”和“无关文档占据第 1 名”两类问题 [5]。在 RAG 中排序位置的重要性还会被放大，因为生成器更偏向早期片段 [3]。\n\n### 2.2 生成端指标\n\n- **Faithfulness（忠实度）**：答案中的主张有多少能被检索上下文支持。RAGAS 的做法是把答案拆成原子陈述，逐条用 LLM 判断（或用 NLI 模型看是否被蕴含），得分为“被支持陈述数 / 总陈述数”，取值 0–1；1.0 为完全有据，0.5 意味一半内容可能来自模型参数记忆即幻觉 [5][8]。**无需参考答案**，是最核心的幻觉指标，生产上低于 0.85 即意味着用户会收到自信的错误答案 [7]。\n- **Answer Relevance（答案相关性）**：答案是否真正回应用户问题，通过“反向生成问题 + 与原问题比对”计算，**无需参考答案**，0–1；低分表现为答非所问、回避、注水 [8]，衡量对终端用户的**有用性** [5]。\n\n### 2.3 Context 类“桥梁”指标（RAGAS）\n\n- **Context Precision**：相关片段是否被排在检索结果靠前位置，衡量检索效率/排序质量，低分意味着噪声压在信号之上 [8]，本质是避免有限上下文窗口被浪费 [5]。\n- **Context Recall**：回答所需的全部信息是否都被检索到（用 LLM 检查参考答案中的句子有多少能被检索片段归因），是 RAGAS 中**唯一必须提供参考答案**的指标，成本更高但更可靠，低分意味着文档缺失 [5][8]。\n\n这四个指标必须**联合解读**：Context Recall 高 + Context Precision 高 + Faithfulness 高 + Answer Relevance 高，才说明系统健康；“Faithfulness=1.0 但 Context Recall 很低”意味着系统忠实地总结了不完整的信息，同样危险 [7][9]。\n\n### 2.4 按业务场景选指标\n\n- **法律检索**：Context Precision、Faithfulness、引用准确率为主，Recall、nDCG 为辅；引用准确率 >95%、Faithfulness >0.85 [3]\n- **医疗问答**：Faithfulness、Answer Relevance、安全检查为主，Faithfulness >0.9 [3]\n- **客服支持**：Answer Relevance、FCR、用户满意度为主，Relevance >0.75 [3]\n- **内部知识库**：Precision@10、Recall、Answer Relevance + 新鲜度指标 [3]\n- **端到端补充**：答案准确率、延迟、成本、引用质量 [1]\n\n---\n\n## 三、主流方法与基准工具\n\n### 3.1 组件化评估是共同思路\n主流框架普遍认为 RAG 由「检索」与「生成」两个模块组成，须分别诊断才能判断问题出在检索还是生成 [2]。由此形成两组对应指标：检索侧 context precision / context recall，生成侧 faithfulness / answer relevance [2][5]。\n\n### 3.2 RAGAS（Reference-free 自动评估）\nRAGAS 是基于 LLM-as-judge 的开源 Python 框架，提供无参考答案的评估，核心指标为 faithfulness、answer relevancy、context relevance，并扩展出 context recall、context entities recall、noise sensitivity 等 [2]。为验证可靠性，RAGAS 论文构建了 **WikiEval** 数据集，用“成对比较”方式收集人类判断（例如让标注者比较标准答案与无上下文答案哪个更忠实）[2]。结论是 RAGAS 指标比 BLEU 等传统基线更贴近人类判断；其中 faithfulness 高度准确，answer relevance 一致性稍低（因选项差异细微），context relevance 最难评估 [2]。标注者间一致性约为 95%（faithfulness、context relevance）和 90%（answer relevance）[2]。\n\n### 3.3 ARES（合成数据 + 微调判别器 + PPI）\nARES 沿 context relevance、answer faithfulness、answer relevance 三个维度评估，通过生成**合成训练数据**微调轻量级 LM judge 来给各组件打分 [1]。其关键创新是用**一小部分人类标注数据**做 prediction-powered inference（PPI），为系统得分生成**统计置信区间**——几百条人工标注即可给出可靠评估，并在 KILT、SuperGLUE、AIS 的 8 个知识密集型任务上验证、跨领域仍有效 [1]。这代表“自动评估为主、人工标注用于校准统计置信”的范式。\n\n### 3.4 基准数据集与框架\n- **CRUD-RAG**：针对既有基准“过度聚焦问答、忽视检索与数据库影响”的局限，提出以 **Create/Read/Update/Delete** 四类 RAG 操作（摘要、事实纠错、创意扩写等）组织的中文大规模基准，配套自建数据集与 **RAGQuestEval** 指标，系统性评估 retriever、context length、知识库构建、LLM 等组件 [3]。\n- **RGB**：以问答为中心的代表性 RAG 基准，常被 CRUD-RAG 引为对比对象 [3]。\n- **其他公开数据集**：RAGTruth（约 1.8 万条响应、词级幻觉标注）、FRAMES、FEVER（18.5 万条人工标注事实核验）、BeIR（检索评测）、Needle-in-a-Haystack（长上下文）等，覆盖幻觉、检索、长上下文等不同能力面 [7]。\n- **工程化工具链**（TruLens、Confident AI、LlamaIndex 集成等）强调版本化数据集构建、从自有知识库生成合成用例、将自动评分与 reviewer 判断对齐，并支持生产监控 [4]。\n\n### 3.5 人工评估与自动评估如何结合\n1. **自动为主、人工校准**：RAGAS 用 LLM judge 自动打分，但以人工成对标注（WikiEval）验证一致性 [2]；ARES 进一步用少量人工标注 + PPI 给自动分数加置信区间 [1]。\n2. **人工金标作为基准**：RAGTruth 的幻觉标签、FEVER 的事实核验标签等提供人工金标，用于验证自动指标 [7]。\n3. **关注 judge 可靠性**：LLM judge 对温度、措辞敏感，校准会随查询类型变化，需人工验证并分析错误模式 [5]；实践中团队用人工评审对齐自动分数，并主动挑选信息量大的样本送人工复核 [4][5]。\n\n---\n\n## 四、端到端评估流程设计\n\n### 4.1 总体思路：离线 + 在线构成闭环\n生产级 RAG 评估不是一次性打分，而是持续改进的循环：离线评估在隔离环境中给出部署决策，在线评估提供真实用户反馈，二者互补并互相更新数据集 [1]。评估工具必须能“指出哪一部分失败”，因为改 Prompt 修不好弱检索器，改检索修不好忽略证据的模型 [4]。\n\n### 4.2 离线评测集（黄金数据集）构建\n黄金数据集通常包含：有代表性的输入查询、理想的预期响应、每个查询应检索到的真实相关文档/上下文 [1]。\n- **构建方法**：可从知识库反向合成——让 LLM 依据数据库内容生成问题与答案；并通过变换问法、模拟不同角色、按真实数据分布比例生成来丰富数据集 [6]。\n- **规模建议**：为检索诊断构建 50~100 个带参考的精编样本集；无参照指标（faithfulness、answer relevancy）可直接跑在线上生产流量上，无需参考答案 [5]。\n- **人工把关**：合成数据只是起点，不能取代专家评审与真实用户样例；务必人工抽样检查、用规则脚本筛选，并让领域专家贡献边界案例 [4][6]。\n\n### 4.3 分阶段组件诊断\n1. **检索阶段**（需真值数据集，标注每个查询的正确文档/块 ID）：用 MRR、nDCG、命中率、Precision@k、Recall@k 等标准 IR 指标 [1][6]。\n2. **生成阶段**：有参考时用语义相似度或 LLM-as-judge；无参考时用忠实度、答案相关性、上下文相关性/召回率/准确性等 RAGAS 系指标 [1]。\n3. **端到端**：把检索与生成指标组合评估整条流水线，但核心仍是**分开评分**以便在组件级定位问题 [4][6]。评测方式应随开发/测试/生产阶段选择相应方法 [6]。\n\n### 4.4 线上 A/B 与持续监控\n- **适用场景**：持续生产监测、A/B 测试与金丝雀发布、验证离线改进在真实用户中是否成立、检测数据/查询漂移、基于用户行为做微调 [1]。\n- **所需基础设施**：全面日志（查询、检索上下文、生成响应、用户交互）、数据标注平台、评估框架、A/B 测试平台、监控告警系统 [1]。\n- **闭环机制**：线上发现的高频问题查询/用户不满回流扩充离线黄金数据集；离线分析产生的想法再用在线 A/B 验证 [1]。\n- **工程实践**：每次评估后把平均分、git commit hash、评审模型、时间戳追加到日志，使回归在折线图中表现为“下跌”而非线上事故；无参照指标（faithfulness）可专门用于线上流量 [5]。\n\n---\n\n## 五、常见陷阱与最佳实践\n\n### 5.1 陷阱\n- 只做端到端总评、不拆组件 → 无法定位是检索还是生成的锅 [6]。\n- 每次运行重生成测试集 → 引入噪声、结果不可比 [6]。\n- 盲目使用合成数据、不做人工核查 [6]。\n- 把离线成功当作线上一定好——离线只是真实性能的“代理”，且数据集静态、易受漂移影响 [1]。\n- 在线侧：隐式反馈模糊难解读、基础设施开销大、混杂因素导致归因困难、需遵守数据隐私 [1]。\n- 评审模型逐样本有噪声，应固定评审模型并以全量均值设闸 [5]。\n\n### 5.2 最佳实践\n- 保持测试集**稳定**，同时随真实用户查询与故障演进扩充；保留最初测试集作为基线 [6]。\n- 每次更改（Prompt、模型、上下文长度）都要重跑无参照指标，这些改动最易引入幻觉 [5]。\n- 在固定数据集上做受控对照实验，比较不同 retriever/embedding/chunking/prompt/model，而不是用不同样本评判变体 [4]。\n- 用评测做发布门禁：关键测试在每次 PR 上跑，更广套件按计划跑；质量变差时阻止发布，并保留失败案例供复核 [4]。\n- 对语气、风格等自动指标遗漏之处用人工评估补充 [1]。\n\n---\n\n## 六、一页速查：落地清单\n\n1. **建黄金数据集**（50–100 条带参考，含真实分布与边界案例）[1][6]\n2. **先测检索**（Recall@K / MRR / nDCG@K），Recall 不达标则先修检索，否则下游调优无效 [1][5]\n3. **再测生成**（Faithfulness 目标生产 ≥0.85，Answer Relevance 按场景设阈）[7][8][3]\n4. **用 Context Precision/Recall 联合诊断**，避免“忠实总结不完整信息”的假健康 [7][9]\n5. **接入自动化框架**（RAGAS / ARES），辅以人工标注校准 judge 可靠性 [2][1]\n6. **线上监控 + A/B + 日志回流**，形成离线-在线闭环 [1][5]\n7. **每次变更重跑、以评测作发布门禁** [4][5]\n\n---\n\n## 参考来源\n\n- [1] RAG评估方法 | 离线与在线评估对比 — https://apxml.com/zh/courses/optimizing-rag-for-production/chapter-6-advanced-rag-evaluation-monitoring/rag-offline-online-evaluation\n- [2] RAGAS: Automated Evaluation of Retrieval Augmented Generation — https://arxiv.org/html/2309.15217v1\n- [3] [2401.17043] CRUD-RAG: A Comprehensive Chinese Benchmark for Retrieval-Augmented Generation of Large Language Models — https://arxiv.org/abs/2401.17043\n- [4] 7 Best RAG Evaluation Tools for Retrieval and Generation Quality (2026) - Confident AI — https://www.confident-ai.com/knowledge-base/compare/best-rag-evaluation-tools\n- [5] RAG Evaluation: Metrics for Retrieval and Generation Quality - Interactive — https://mbrenndoerfer.com/writing/rag-evaluation-metrics-retrieval-generation\n- [6] RAG评测完整指南：指标、测试和最佳实践 - AI-Frontiers - 博客园 — https://www.cnblogs.com/aifrontiers/p/19293942\n- [7] 7 RAG benchmarks — https://www.evidentlyai.com/blog/rag-benchmarks\n- [8] Ragas Faithfulness & Answer Relevancy: 2026 Guide | QASkills.sh — https://qaskills.sh/blog/ragas-faithfulness-answer-relevancy-guide\n- [9] RAG Evaluation Metrics: Assessing Answer Relevancy, Faithfulness, Contextual Relevancy, And More - Confident AI — https://www.confident-ai.com/blog/rag-evaluation-metrics-answer-relevancy-faithfulness-and-more",
+    "elapsed_s": 63.3,
+    "sources": [
+      {
+        "citation_id": 1,
+        "title": "RAG评估方法 | 离线与在线评估对比",
+        "url": "https://apxml.com/zh/courses/optimizing-rag-for-production/chapter-6-advanced-rag-evaluation-monitoring/rag-offline-online-evaluation"
+      },
+      {
+        "citation_id": 2,
+        "title": "RAGAS: Automated Evaluation of Retrieval Augmented Generation",
+        "url": "https://arxiv.org/html/2309.15217v1"
+      },
+      {
+        "citation_id": 3,
+        "title": "[2401.17043] CRUD-RAG: A Comprehensive Chinese Benchmark for Retrieval-Augmented Generation of Large Language Models",
+        "url": "https://arxiv.org/abs/2401.17043"
+      },
+      {
+        "citation_id": 4,
+        "title": "7 Best RAG Evaluation Tools for Retrieval and Generation Quality (2026) - Confident AI",
+        "url": "https://www.confident-ai.com/knowledge-base/compare/best-rag-evaluation-tools"
+      },
+      {
+        "citation_id": 5,
+        "title": "RAG Evaluation: Metrics for Retrieval and Generation Quality - Interactive",
+        "url": "https://mbrenndoerfer.com/writing/rag-evaluation-metrics-retrieval-generation"
+      },
+      {
+        "citation_id": 6,
+        "title": "RAG评测完整指南：指标、测试和最佳实践 - AI-Frontiers - 博客园",
+        "url": "https://www.cnblogs.com/aifrontiers/p/19293942"
+      },
+      {
+        "citation_id": 7,
+        "title": "7 RAG benchmarks",
+        "url": "https://www.evidentlyai.com/blog/rag-benchmarks"
+      },
+      {
+        "citation_id": 8,
+        "title": "Ragas Faithfulness &amp; Answer Relevancy: 2026 Guide | QASkills.sh",
+        "url": "https://qaskills.sh/blog/ragas-faithfulness-answer-relevancy-guide"
+      },
+      {
+        "citation_id": 9,
+        "title": "RAG Evaluation Metrics: Assessing Answer Relevancy, Faithfulness, Contextual Relevancy, And More - Confident AI",
+        "url": "https://www.confident-ai.com/blog/rag-evaluation-metrics-answer-relevancy-faithfulness-and-more"
+      }
+    ],
+    "citations": {
+      "total_refs": 106,
+      "unique_refs": 9,
+      "available_sources": 9,
+      "fabricated": [],
+      "fabricated_rate": 0.0
+    },
+    "stats": {
+      "prompt_tokens": 76426,
+      "completion_tokens": 9014,
+      "total_tokens": 85440,
+      "total_cost": 0.224964,
+      "total_duration_ms": 133495,
+      "calls": 41,
+      "by_agent": {
+        "critic": {
+          "tokens": 4044,
+          "cost": 0.008148,
+          "duration_ms": 1324,
+          "calls": 1
+        },
+        "planner": {
+          "tokens": 384,
+          "cost": 0.00171,
+          "duration_ms": 2454,
+          "calls": 1
+        },
+        "researcher-1": {
+          "tokens": 28251,
+          "cost": 0.06813,
+          "duration_ms": 42953,
+          "calls": 14
+        },
+        "researcher-2": {
+          "tokens": 19974,
+          "cost": 0.050339997,
+          "duration_ms": 36448,
+          "calls": 13
+        },
+        "researcher-3": {
+          "tokens": 24446,
+          "cost": 0.05902,
+          "duration_ms": 35268,
+          "calls": 11
+        },
+        "writer": {
+          "tokens": 8341,
+          "cost": 0.037616,
+          "duration_ms": 15048,
+          "calls": 1
+        }
+      }
+    },
+    "judge": {
+      "relevance": 5,
+      "accuracy": 5,
+      "citation": 5,
+      "completeness": 5,
+      "structure": 5,
+      "summary": "报告紧扣RAG评估问题，全面覆盖检索质量指标、答案忠实度、引用正确性、端到端与分模块评测等关键点，引用真实且支撑论断，结构清晰、层次分明，是一份高质量的研究报告。"
+    }
+  },
+  {
+    "id": "q9",
+    "question": "微调（fine-tuning）和 RAG 分别适合什么场景，如何选择？",
+    "type": "research",
+    "status": "done",
+    "report": "# 微调（Fine-tuning）与 RAG：场景适配与选择指南\n\n## 一、结论先行\n\n微调和 RAG 不是二选一的对立方案，而是解决两类不同问题的工具：**RAG 改变模型\"看到什么\"（知识），微调改变模型\"怎么做\"（行为、格式、风格、领域技能）**[5]。因此一条可操作的判据是：\n\n- **知识会变化、属于私有数据、或需要引用溯源 → 选 RAG** [1][5]\n- **瓶颈在输出格式、品牌语气、领域任务技能或推理成本/延迟 → 选微调** [1][5]\n- **两者都重要（专业能力 + 实时更新）→ 混合：微调打底 + RAG 供事实** [3][5][6]\n\n通用推荐路径是按成本递增依次尝试 **提示（Prompt）→ RAG → 微调**，每后一步都更贵、更难迭代 [5]。\n\n---\n\n## 二、两者的本质区别与技术原理\n\n两者目标相同——让 LLM 适配特定业务需求、提升企业价值——但技术路径截然不同 [2]。核心差异在于：**RAG 不改动模型权重，通过外接专有知识库来增强提示；微调则在一组集中的外部数据上重新训练模型、调整其权重与参数** [2][4]。可以理解为两种\"记忆\"：RAG 是非参数记忆（依赖外部知识库），微调是参数记忆（知识固化进模型内部表示）。\n\n- **RAG 原理**：将检索模型与生成模型结合，先用语义/混合搜索从知识库抓取相关信息并向量化，再在生成阶段以检索结果为参考产出回答 [4]。\n- **微调原理**：在预训练模型基础上用专门数据继续训练，修改权重与参数使模型学习任务特定模式，同时保留预训练知识；除生成外也适用于分类、情感分析、命名实体识别等任务 [4]。\n\n---\n\n## 三、各自的优势与局限\n\n### RAG 的优势\n- **知识更新成本低、时效性强**：更新知识库即可，无需重训模型 [4]。\n- **成本与门槛低**：计算与存储需求较小，比微调更省时省钱 [4]。\n- **可溯源、可解释**：能引用外部来源供核验，对模糊查询可减少幻觉、降低偏见 [4]。\n\n### RAG 的局限\n- **高度依赖外部知识质量**：检索错误则生成错误 [4]。\n- **检索环节带来成本与延迟**：大知识库检索计算量大，检索与生成的集成需精心优化 [4]。\n- **隐私与合规风险**：检索敏感数据需靠文档级权限控制 [4]。\n- **创意性受限**：基于事实准确性，难以生成虚构/创意内容 [4]。\n\n### 微调的优势\n- **任务专精、性能稳定**：任务定义明确时优化效果显著 [4]。\n- **强化领域知识与术语理解**：领域数据训练后对专业术语理解更好、生成更准确 [2]。\n\n### 微调的局限\n- **成本高、周期长**：需大量算力与时间 [4]。\n- **知识更新困难**：知识固化在参数中，领域变化时易过时，需定期重训 [3][4]。\n- **数据依赖强**：需要标准化、高质量的标注数据与领域语料 [2]。\n\n两者并不互斥：**混合方案**（微调获得领域理解与输出格式、RAG 在推理时提供最新事实）在复杂用例中效果显著优于任一单独方法 [3]。\n\n---\n\n## 四、典型业务场景\n\n### RAG 更适合的场景\n- **知识与信息高频变动**：金融顾问引用当前市场状况、法律助理引用近期判例；只需把新文档摄取、切块、向量化进检索层，无需重训 [3]。\n- **客户支持 / 服务台自动化**：从源数据取答案，生成有证据支撑、可核验的回复，降低幻觉带来的过度自信 [6]。\n- **需要可溯源、可引用的答案**：把外部来源列给用户自行评估 [4]。\n- **合规/隐私敏感场景**：通过文档级权限控制限制特定角色可访问的内容 [4]。\n- **数据变动快、不宜反复训练**：如频繁变动的私有代码仓库代码助手、旅游/资讯/在线零售等 [3][5]。\n\n### 微调更适合的场景\n- **专业领域行为与稳定知识**：领域知识变化缓慢（医学术语、法律合同惯例），且通用模型在专业任务上表现差时，微调可纠正偏差 [3]。典型如医疗分诊/慢病管理聊天机器人、金融或工程技术文档摘要、法律文书分析 [6]。\n- **固定输出格式与\"公司风格/语气\"**：输出 schema 和 house style/tone 通过大量样例学习比指令更可靠（长篇风格提示几轮后就会漂移）[5]。\n- **领域任务的分类、抽取、路由**：针对自有分类体系微调效果显著 [5]。\n- **大规模固定标签分类**（固定 schema、短提示、成本由调用量主导）[5]。\n- **抑制基础模型不良行为**（过度拒答、冗长、习惯性免责声明）[5]。\n- **降低推理成本**：小模型微调 + 一句话提示替代大模型 + 长提示，可显著降低推理开销 [5]。\n\n### 混合（RAG + 微调）实践\n多数行业实践最终走向混合架构：微调让模型成为\"领域专家\"，RAG 保证知识时效性与可引用性 [6]。典型如\"house format 输出 + 案例事实随上下文到达\"适合\"微调，常常加 RAG\" [5]；私有且天天变动的代码仓库适合 Hybrid（模型需学会使用检索到的代码）[5]；金融分析与监管合规是\"专业能力 + 实时更新\"双重要求下混合方案的典型 [6]。\n\n---\n\n## 五、决策框架与评估方法\n\n### 1. 先判断是\"知识\"问题还是\"行为\"问题\nRAG 改知识，微调改行为（格式、风格、任务技能、成本与延迟画像）[5]。大多数生产系统应采用\"RAG 优先，再叠加微调\"的路径，最理想通常是两者结合 [1][5]。\n\n### 2. 可操作的决策树（遇到第一个\"是\"即停止）[1]\n1. **答案是否依赖会变化的数据**（政策、价格、产品规格、工单、代码）？→ 是则选 **RAG**（微调会把数据固化进权重，数据一更新即过时）。\n2. **是否需要引用来源、展示出处或通过审计**？→ 是则选 **RAG**（微调模型无法指出支撑答案的文档）。\n3. **问题是否是固定输出格式、品牌语气或狭窄领域技能**？→ 是则属于\"行为\"问题，选 **微调**。\n\n补充的量化参考（来自搜索摘要、未抓取原文核实，建议进一步确认）：知识更新频率高于每月 → 优先 RAG；知识稳定数月以上 → 可评估微调；查询量极高（如每月数千万次）且知识稳定 → 微调更划算。\n\n### 3. 按目标维度的权衡矩阵\n\n| 目标维度 | RAG | 微调 |\n|---|---|---|\n| **知识时效性** | 实时/近实时，替换文档即可更新 [5] | 静态，直到重训；数据一变即过时 [1] |\n| **领域专业性** | 擅于动态、可能变化的事实；需可引用的专有知识 [5] | 擅于稳定领域知识（术语、惯例、专有规范），前期投入可在大量调用中摊销 [3] |\n| **成本结构** | 无训练成本，但每次请求因更长提示词和检索而付费 [5] | 前期训练成本高，但可用更小专用模型替代大模型，高查询量下降低单次推理成本 [3][5] |\n| **数据隐私/合规** | 数据留在外部、可审计，治理较易；敏感数据靠文档级权限控制 [3][4] | 数据嵌入模型权重，治理/合规更复杂 [3] |\n| **推理延迟** | 检索带来实时延迟 [5] | 推理快（小模型+短提示可替代大模型+长提示），适合延迟敏感场景 [5] |\n\n关键洞察：两侧成本落在不同位置——**RAG 在每次请求付费，微调在前端一次性付费**，这正是需要认真权衡的原因 [5]。\n\n### 4. 评估与验证方法\n1. **先上 RAG 做\"诊断性评估\"**：生产检索流水线可从真实流量中暴露哪些查询类型/模型行为在真实负载下失效（语气、格式、推理缺口），为后续是否微调及微调数据集设计提供领域数据 [3]；建议先运行数周再决定是否微调（来自搜索摘要，建议核实）。\n2. **优先尝试成本最低的方案**：提示词只需一次 API 调用，而微调需数天数据准备与 GPU 成本 [5]。\n3. **按关键指标做 A/B 对照**：对准确性、每查询成本、前期投入、延迟、幻觉率、可维护性分别量化比较 [3][5]。\n4. **混合方案评估——RAFT（检索增强微调）**：在\"问题+检索文档（含干扰项）+答案\"上训练生成器，让模型学会使用相关段落、忽略无关内容；RAFT 在 PubMed、HotpotQA、Gorilla 等数据集上优于纯 RAG 与纯微调，尤其在检索质量不完美时（现实中总是如此）[5]。\n5. **常见混合模式**：①微调管格式/语气、RAG 管事实；②RAG 搭配微调后的嵌入模型；例如法律助手：微调让模型\"像律师一样思考\"，RAG 提供最新判例与法规 [5]。\n\n### 5. 别忘了长期可维护性\nRAG 需索引维护与查询调优，微调需重新训练节奏——应选择团队能长期承担的工作量 [1][3]。\n\n---\n\n## 六、一句话总结\n\n**知识会变、私有或需引用 → 用 RAG；行为（格式、语气、领域技能）是瓶颈或需压低推理成本/延迟 → 用微调；两者都要 → 微调打底 + RAG 供事实的混合方案。** [1][3][5][6]\n\n---\n\n## 参考来源\n\n- [1] RAG vs Fine-Tuning in 2026: A Decision Framework for LLM Teams — https://winder.ai/rag-vs-fine-tuning-2026-decision-framework\n- [2] RAG vs. Fine-tuning | IBM — https://www.ibm.com/think/topics/rag-vs-fine-tuning\n- [3] RAG vs Fine Tuning: Enterprise Decisions for AI Models and AI Systems | Databricks Blog — https://www.databricks.com/blog/rag-vs-fine-tuning\n- [4] 什么是检索增强生成 (RAG)？| RAG 全面指南 | Elastic — https://www.elastic.co/cn/what-is/retrieval-augmented-generation\n- [5] RAG vs. fine-tuning: a decision framework for LLM apps | Together AI — https://www.together.ai/blog/rag-vs-fine-tuning\n- [6] RAG vs. fine-tuning: Which AI strategy should you choose? | IBM — https://developer.ibm.com/articles/awb-rag-vs-fine-tuning",
+    "elapsed_s": 116.2,
+    "sources": [
+      {
+        "citation_id": 1,
+        "title": "RAG vs Fine-Tuning in 2026: A Decision Framework for LLM Teams",
+        "url": "https://winder.ai/rag-vs-fine-tuning-2026-decision-framework"
+      },
+      {
+        "citation_id": 2,
+        "title": "RAG vs. Fine-tuning | IBM",
+        "url": "https://www.ibm.com/think/topics/rag-vs-fine-tuning"
+      },
+      {
+        "citation_id": 3,
+        "title": "RAG vs Fine Tuning: Enterprise Decisions for AI Models and AI Systems | Databricks Blog",
+        "url": "https://www.databricks.com/blog/rag-vs-fine-tuning"
+      },
+      {
+        "citation_id": 4,
+        "title": "什么是检索增强生成 (RAG)？| RAG 全面指南 | Elastic",
+        "url": "https://www.elastic.co/cn/what-is/retrieval-augmented-generation"
+      },
+      {
+        "citation_id": 5,
+        "title": "RAG vs. fine-tuning: a decision framework for LLM apps",
+        "url": "https://www.together.ai/blog/rag-vs-fine-tuning"
+      },
+      {
+        "citation_id": 6,
+        "title": "RAG vs. fine-tuning: Which AI strategy should you choose?",
+        "url": "https://developer.ibm.com/articles/awb-rag-vs-fine-tuning"
+      }
+    ],
+    "citations": {
+      "total_refs": 80,
+      "unique_refs": 6,
+      "available_sources": 6,
+      "fabricated": [],
+      "fabricated_rate": 0.0
+    },
+    "stats": {
+      "prompt_tokens": 64099,
+      "completion_tokens": 7036,
+      "total_tokens": 71135,
+      "total_cost": 0.184486,
+      "total_duration_ms": 235858,
+      "calls": 35,
+      "by_agent": {
+        "critic": {
+          "tokens": 2944,
+          "cost": 0.005948,
+          "duration_ms": 1211,
+          "calls": 1
+        },
+        "planner": {
+          "tokens": 336,
+          "cost": 0.001296,
+          "duration_ms": 2072,
+          "calls": 1
+        },
+        "researcher-1": {
+          "tokens": 22196,
+          "cost": 0.05218,
+          "duration_ms": 27338,
+          "calls": 10
+        },
+        "researcher-2": {
+          "tokens": 22708,
+          "cost": 0.053438,
+          "duration_ms": 94434,
+          "calls": 11
+        },
+        "researcher-3": {
+          "tokens": 16507,
+          "cost": 0.043495998,
+          "duration_ms": 98860,
+          "calls": 11
+        },
+        "writer": {
+          "tokens": 6444,
+          "cost": 0.028128,
+          "duration_ms": 11943,
+          "calls": 1
+        }
+      }
+    },
+    "judge": {
+      "relevance": 5,
+      "accuracy": 5,
+      "citation": 5,
+      "completeness": 5,
+      "structure": 5,
+      "summary": "报告紧扣微调与RAG的场景适配与选择问题，准确覆盖权重改变、外部知识注入、成本时效、知识更新与可追溯性等关键点，引用规范且支撑到位，结构层次清晰，决策框架与矩阵实用性强。"
+    }
+  },
+  {
+    "id": "q10",
+    "question": "多智能体（multi-agent）系统相比单智能体有哪些优势和挑战？",
+    "type": "research",
+    "status": "done",
+    "report": "# 多智能体系统 vs 单智能体：优势与挑战\n\n## 摘要\n\n多智能体（multi-agent, MAS）相比单智能体的核心优势在于**专业化分工、模块化扩展、容错降级与并行探索**：它能把复杂目标拆给具备特定工具与专长的子智能体，集体性能可超越任何单一智能体，并在某个组件失效时优雅降级 [2][7]。但代价同样具体：协调与通信开销随规模近似平方增长，错误会在链条中级联放大，系统失败率在真实部署中高达 41%–86.7%，且约 79% 的失败源于规格与协调设计而非模型能力 [3][6]。因此学界与工业界的收敛结论是：**默认优先单智能体，只有当任务天然可并行、需要多个专家角色、且任务价值足以承受 token 倍增并有可靠验证方案时，才引入多智能体** [4][5]。\n\n---\n\n## 一、多智能体相比单智能体的优势\n\n### 1. 任务性能：分工与集体推理带来质量提升\n\nMAS 可将复杂目标拆解为离散子问题，分配给具备特定工具、数据访问或推理能力的专业化智能体（如检索、数据分析、综合生成），因此集体性能可超越任何单个智能体 [2][7]。单个智能体必须跨多个领域执行任务，而 MAS 中每个智能体可专注特定领域专长，加之共享资源池更大并可通过优化与自动化提升表现，往往优于单智能体系统 [2]。\n\n协作模式本身也能提升质量：\"辩论与共识\"\"批评-审查者\"等模式通过多视角讨论或事后严格评估，降低幻觉与错误率 [2][7]。\n\n量化证据方面，康奈尔大学一项研究显示，协调式多智能体系统在复杂规划任务上的成功率为 **42.68%**，而单智能体 GPT-4 在同一基准上仅为 **2.92%** [7]。需要说明的是，这是特定基准上的结果，外推需谨慎。\n\n### 2. 可扩展性：模块化扩展而非重训练大模型\n\n相比\"训练一个大模型做所有事\"，引入新领域时只需新增一个专家智能体，这种模块化让扩展更易管理，长期看也更具成本效益 [7]。系统可增加更多智能体而不显著降低速度，从而处理更多工作与更大量数据，MAS 可涵盖数百甚至数千个智能体 [2][7]。分布式架构（无中心主控、智能体对等协商）消除了中央瓶颈，进一步增强可扩展性 [6]。\n\n### 3. 鲁棒性与容错：优雅降级\n\n单智能体只有一个决策引擎，一旦失败即全流程中断；MAS 中某个组件失败不一定拖垮整个工作流，系统可优雅降级、维持核心运行，若一个智能体停止工作，其他智能体会接管，因此在关键场景下更可靠 [7]。智能体间共享参数、本地知识与决策，也能通过通信增强算法鲁棒性 [6]。\n\n### 4. 灵活性与效率\n\nMAS 可通过增删或调整智能体适应变化环境，并行探索多个方案并选取最优解，其分布式特性与自主性使其在动态、不可预测环境中仍表现良好 [2][6]。同时，将复杂任务拆解为更易编写的子任务，为开发者提供了参考框架，提升开发效率并降低系统总成本 [6][7]。\n\n---\n\n## 二、多智能体在实际部署中的主要挑战\n\n### 1. 整体失败率高，且是系统性问题\n\n生产环境中的多智能体 LLM 系统常在部署后数周甚至数小时内失效。一项针对 7 个开源框架、1,642 条执行轨迹的分析发现，标准基准上的失败率高达 **41%~86.7%**，且这是系统性问题而非模型质量问题 [3][4]。\n\n### 2. 三大失败类别：约 79% 源于规格与协调\n\n研究将失败归为三类：规格/系统设计约 **42%**、智能体间错配（协调失败）约 **37%**、任务验证与终止约 **21%**，即约 79% 源于规格与协调问题，而非算力或模型能力限制 [3][4]。\n\n- **规格与设计（42%）**：角色定义模糊（职责重叠、无明确归属）、任务分解不当（过细导致交接爆炸、过粗导致静默截断）、缺少约束（无 token 预算、无迭代上限）[3]。\n- **协调失败（37%）**：通信中断、状态同步问题、目标冲突 [3]；上下文在传递中丢失或失真会导致下游智能体误判 [1]。\n- **验证缺口（21%）**：过早终止（6.2%）、验证不完整（8.2%）、验证本身推理错误（9.1%），系统\"自认为成功但输出错误\" [3]。\n\n### 3. 通信与协调开销\n\n- **开销随规模平方增长**：N 个智能体若两两可通信，直接通信通道数与 N² 成正比，消息量会压垮带宽与处理能力，LLM API 的速率限制与延迟成为瓶颈 [6]。\n- **成本被放大**：协调消耗的上下文 token 挤占实际任务容量，多步工作流中额外轮次与重复上下文处理让成本迅速累积 [5]。每次智能体间交接带来 **100–500ms** 的序列化与网络延迟，token 消耗随各智能体重建上下文而叠加 [3]。\n- **单智能体常更优**：在顺序推理类任务上，协调开销会超过并行化收益，多智能体反而不如单智能体基线；在 180 种配置的评估中，多智能体变体表现不及单智能体基线，通信开销是解释之一 [5]。\n\n### 4. 错误传播与级联故障\n\nLLM 本身会出错，未被发现的不准确内容会传递给下一个智能体，使最终结果显著偏离；协作链条中一个智能体的错误会被传递并放大到后续环节 [1][2]。MAS 的互联性意味着单个子系统故障可触发其他智能体故障，多个智能体同时重试失败操作是级联故障的常见来源，需要断路器和硬性超时预算 [3][6]。此外，在众多智能体间维持一致的全局状态困难，共享资源（工具、数据库、执行器）争用加剧，同步任务易出现死锁/活锁 [6]。\n\n### 5. 成本与延迟\n\n多方协作意味着多次模型调用，直接推高成本与响应延迟，企业需在质量与资源消耗间权衡 [1]。成本不仅随智能体数量扩展，还随交互频率与复杂性变化；大型 MAS 中智能体可能被消息淹没，导致响应延迟和信息丢失 [6]。\n\n### 6. 可观测性与调试\n\n多智能体故障排查困难：多个智能体共同产出结果时定位根因需更多精力，即便追到某个智能体，因 LLM 的概率性也极难复现 [2]。故障可能源自单个智能体的错误逻辑、通信误解、协调失败或多智能体反馈循环，随机性与复杂依赖使场景难以重现 [6]。缺少 correlation ID 与分布式追踪时，调试只能靠拼接断裂日志 [3]。\n\n### 7. 其他结构性挑战\n\n多个智能体访问不同工具和数据源，需精细权限控制避免越权 [1]；自主度过高的对等群体会\"相互印证彼此的错误\"，且每个持有工具访问权的智能体都扩大提示注入的传播面 [4]。智能体在微调/脚本设定域之外性能会急剧下降，而多智能体又高度依赖顺畅的智能体间通信 [4]。\n\n**核心洞察**：多智能体系统以分布式系统的方式失败——通过规格缺口、协调崩塌与缺失验证层；它适用的是分布式系统工程，而非提示工程；更好的模型并不能修复模糊的角色定义、格式不匹配或缺失的验证步骤 [3]。\n\n---\n\n## 三、适用场景对比与最佳实践\n\n### 1. 核心共识：默认单智能体\n\n业界与学术界的收敛意见是：大多数常规任务上，单智能体更快、更便宜，且更容易调试和治理；只有在任务天然可并行、需要多个不同专家角色，或超出单个上下文窗口时，多智能体才值得采用 [4][5]。稳妥做法是\"先用单智能体或工作流验证需求，确实不够用再引入第二类智能体\" [4]。\n\n### 2. 两种代表性立场的分歧与统一\n\n**Cognition（Devin）：默认不要构建多智能体。** 其两条原则是：智能体之间要共享完整上下文和完整执行轨迹，而非零散消息；每个动作都隐含决策，不同分支的相互冲突决策会带来糟糕结果 [1]。因此最简单方案是\"单线程线性智能体\"，保持一条连续的推理链，即便内部有子组件，对外也表现为一个连贯决策者 [1]。前提是编码这类任务无法干净拆成彼此独立的子任务，并行化收益有限 [4]。\n\n**Anthropic：研究类任务上多智能体收益压倒性。** 其多智能体研究系统内部评测显著优于单智能体（据转述约提升 90%），原因是研究/检索任务可拆成彼此独立、以读取为主的并行子任务；但代价是 token 消耗约为聊天交互的 15 倍（单智能体约 4 倍），\"token 花销\"约能解释性能差异的 80%——若任务常规，这 15 倍额外开销就是纯浪费 [4]。\n\n二者在 2025 年 6 月相隔一天给出相反建议，被业界视为\"两者都对\"：分歧根源在于任务领域——编码难并行故适合单线程智能体，检索研究天然可并行且价值高故适合多智能体 [4]。\n\n### 3. 学术界的量化证据\n\n- **成本**：UIUC 在 7 个数据集和 6 个模型上的研究显示，多智能体 token 消耗是单智能体的 4–220 倍，即便优化后也不低于 2–12 倍 [4]。\n- **收益**：Cornell 研究显示复杂规划任务上多智能体成功率 42.68% vs 单智能体 2.92% [4]。\n- **失败模式**：1,642 条执行轨迹分析中失败率 41%–86.7%，约 79% 源于规格与协调问题，约 36.9% 属于\"因为存在多个智能体才会出现\"的智能体间不对齐 [3][4]。\n\n### 4. 最佳实践要点\n\n- **决策准则**：任务边界清晰、顺序流程用单智能体；需要并行处理或领域专家分工用多智能体；也可采用\"中央编排器 + 专家智能体\"的混合模式 [4]。\n- **拆分门槛**：只在高并发、子任务高度独立、智能体间几乎不需共享状态时，多智能体才可靠；协调一旦频繁，可靠性急剧下降 [3]。\n- **协调开销红线**：每次交接带来 100–500ms 延迟并放大 token 消耗；当协调成本超过并行收益时，就应减少智能体数量 [3][5]。\n- **验证与评估**：先小规模试点再全量推广；为验证设置带独立上下文和预设评分标准的独立评审智能体 [3][4]。\n- **用户体验**：即使内部是多智能体，对外也宜表现为统一的单一决策者，避免用户困惑 [1]。\n\n### 5. 结论：\"正确的架构在中间\"\n\n通用规则是：**默认单智能体，仅当工作真正能拆成彼此独立、以读取为主的部分，且任务价值足以承受 token 倍增、并有可靠验证方案时，才使用第二类智能体** [4]。\n\n---\n\n## 参考来源\n\n- [1] Don't Build Multi-Agents | Cognition — https://cognition.com/blog/dont-build-multi-agents\n- [2] What is a Multi-Agent System? | IBM — https://www.ibm.com/think/topics/multiagent-system\n- [3] Why Multi-Agent LLM Systems Fail (and How to Build Ones That Don't) — https://tianpan.co/blog/2025/10/14/why-multi-agent-llm-systems-fail\n- [4] Build a Team of Agents, or Do Not: The Multi-Agent Debate — https://perform.digital/blogs/multi-agent-debate\n- [5] Why Multi-Agent LLM Systems Fail & How to Fix Them — https://redis.io/blog/why-multi-agent-llm-systems-fail\n- [6] 多智能体LLM系统扩展中的挑战 — https://apxml.com/zh/courses/agentic-llm-memory-architectures/chapter-5-multi-agent-systems/challenges-scaling-mas\n- [7] Single-agent vs. multi-agent systems: enterprise AI tradeoffs — https://www.dataiku.com/blog/single-agent-vs-multi-agent-systems",
+    "elapsed_s": 111.6,
+    "sources": [
+      {
+        "citation_id": 1,
+        "title": "Don’t Build Multi-Agents | Cognition",
+        "url": "https://cognition.com/blog/dont-build-multi-agents"
+      },
+      {
+        "citation_id": 2,
+        "title": "What is a Multi-Agent System? | IBM",
+        "url": "https://www.ibm.com/think/topics/multiagent-system"
+      },
+      {
+        "citation_id": 3,
+        "title": "Why Multi-Agent LLM Systems Fail (and How to Build Ones That Don&#x27;t)",
+        "url": "https://tianpan.co/blog/2025/10/14/why-multi-agent-llm-systems-fail"
+      },
+      {
+        "citation_id": 4,
+        "title": "Build a Team of Agents, or Do Not: The Multi-Agent Debate",
+        "url": "https://perform.digital/blogs/multi-agent-debate"
+      },
+      {
+        "citation_id": 5,
+        "title": "Why Multi-Agent LLM Systems Fail &amp; How to Fix Them",
+        "url": "https://redis.io/blog/why-multi-agent-llm-systems-fail"
+      },
+      {
+        "citation_id": 6,
+        "title": "多智能体LLM系统扩展中的挑战",
+        "url": "https://apxml.com/zh/courses/agentic-llm-memory-architectures/chapter-5-multi-agent-systems/challenges-scaling-mas"
+      },
+      {
+        "citation_id": 7,
+        "title": "Single-agent ss. multi-agent systems: enterprise AI tradeoffs",
+        "url": "https://www.dataiku.com/blog/single-agent-vs-multi-agent-systems"
+      }
+    ],
+    "citations": {
+      "total_refs": 75,
+      "unique_refs": 7,
+      "available_sources": 7,
+      "fabricated": [],
+      "fabricated_rate": 0.0
+    },
+    "stats": {
+      "prompt_tokens": 61981,
+      "completion_tokens": 7676,
+      "total_tokens": 69657,
+      "total_cost": 0.18537001,
+      "total_duration_ms": 170919,
+      "calls": 35,
+      "by_agent": {
+        "critic": {
+          "tokens": 3261,
+          "cost": 0.006582,
+          "duration_ms": 1574,
+          "calls": 1
+        },
+        "planner": {
+          "tokens": 325,
+          "cost": 0.00122,
+          "duration_ms": 1917,
+          "calls": 1
+        },
+        "researcher-1": {
+          "tokens": 21239,
+          "cost": 0.05017,
+          "duration_ms": 93556,
+          "calls": 11
+        },
+        "researcher-2": {
+          "tokens": 22113,
+          "cost": 0.055362,
+          "duration_ms": 32508,
+          "calls": 11
+        },
+        "researcher-3": {
+          "tokens": 15628,
+          "cost": 0.040952,
+          "duration_ms": 28258,
+          "calls": 10
+        },
+        "writer": {
+          "tokens": 7091,
+          "cost": 0.031084,
+          "duration_ms": 13106,
+          "calls": 1
+        }
+      }
+    },
+    "judge": {
+      "relevance": 5,
+      "accuracy": 4,
+      "citation": 4,
+      "completeness": 5,
+      "structure": 5,
+      "summary": "报告紧扣多智能体与单智能体的优势与挑战，覆盖角色分工并行、通信协调开销、错误传播一致性及适用场景，结构清晰、引用规范，但个别量化数据（如42.68%对2.92%、1,642条轨迹）在不同引用间存在混用与轻微不一致。"
+    }
+  }
+]

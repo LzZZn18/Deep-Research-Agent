@@ -152,6 +152,50 @@ python -m pytest -v       # 详细输出
 | `tests/test_store.py` | 状态机（`start_if_pending` / `finish_if_running` 的条件更新）、断点往返、引用编号复用、僵尸任务清理 |
 | `tests/test_pipeline.py` | 用 `FakeProvider` 冒充 LLM，跑通 Planner→Researcher→Writer⇄Critic 全链路、简单问题快路径、工具调用循环 |
 
+> 单元测试只验证「代码逻辑对不对」；想验证「产出的报告好不好」，见下一节「输出质量评测」。
+
+---
+
+## 📊 输出质量评测（LLM-as-judge）
+
+固定问题集跑**真实**流水线（真实 LLM + 真实搜索），再用 LLM 作为裁判给报告打分，并程序化校验引用完整性——量化「这个 Agent 产出质量如何」，也能在每次改动后对比回归。
+
+### 运行
+
+```bash
+# 1. 启动数据库（评测自动创建独立的 deepsearch_eval 库，不污染开发数据）
+docker compose up -d db
+
+# 2. 运行（首次会从镜像下载 BGE 模型，之后走本地缓存）
+cd backend
+python eval/run_eval.py              # 跑 questions.json 全部问题
+python eval/run_eval.py --limit 3    # 只跑前 3 个
+python eval/run_eval.py --skip-judge # 只跑流水线 + 引用校验，不做 LLM 打分
+```
+
+结果打印汇总表，并保存到 `backend/eval/results/<时间戳>.json`。
+
+### 评分方式
+
+- **LLM-as-judge 软指标**：裁判按 rubric 给报告逐维打 1~5 分（相关性 / 准确性 / 引用正确性 / 完整性 / 结构）。
+- **引用完整性硬指标**（程序化、非 LLM 主观）：解析报告里所有 `[n]`，逐个核对是否对应真实入库来源，统计「编造引用」数——这是衡量 RAG Agent 是否幻觉的核心指标。
+
+### 基线结果（10 题，`deepseek-chat`）
+
+| 维度 | 平均分 |
+|------|--------|
+| 相关性 | 5.00 |
+| 准确性 | 4.80 |
+| 引用正确性 | 4.71 |
+| 完整性 | 5.00 |
+| 结构 | 4.90 |
+
+**编造引用：0 / 10 题**（所有 `[n]` 都对应真实来源）。
+
+> 裁判与作者暂用同一模型，LLM-as-judge 存在自我偏好、分数可能略偏高，作为内部基线参考；若要对外背书，建议裁判换更强/不同模型。
+>
+> 评测还暴露了 **Planner 复杂度判断的非确定性**：同一问题在不同轮次可能被判为 `simple`（直接回答）或 `research`（检索作答），可用于后续针对性调优。
+
 ---
 
 ## ⚙️ 配置说明（`backend/.env`）
@@ -177,7 +221,7 @@ python -m pytest -v       # 详细输出
 ```
 DeepSearch/
 ├── backend/
-│   └── app/
+│   ├── app/
 │       ├── main.py            # FastAPI 入口
 │       ├── worker.py          # arq 后台 worker（消费队列、跑流水线）
 │       ├── api/tasks.py       # REST + SSE 端点
@@ -198,6 +242,8 @@ DeepSearch/
 │           ├── search.py       # Tavily 搜索
 │           ├── fetch.py        # 网页抓取入库（含引用编号）
 │           └── vector_search.py# 语义检索
+│   ├── eval/                # 输出质量评测（questions.json + run_eval.py + results/）
+│   └── tests/               # 单元测试（pytest）
 ├── frontend/
 │   └── src/
 │       ├── App.vue             # 主界面（研究 + 历史）

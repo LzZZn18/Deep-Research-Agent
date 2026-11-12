@@ -1,0 +1,89 @@
+[eval] 连接/创建 eval 库…
+[eval] 加载 embedding 模型…
+[eval] 共 10 个问题，开始跑…
+[eval] 开始：什么是向量数据库？
+[eval] 打分：什么是向量数据库？
+[eval] 结束：什么是向量数据库？ -> done
+[eval] 开始：比较向量数据库和传统关系型数据库的优缺点。
+����ʧ�ܣ��� 1/2 �Σ���0.5s �����ԣ�All connection attempts failed
+����ʧ�ܣ��� 1/2 �Σ���0.5s �����ԣ�All connection attempts failed
+����ʧ�ܣ��� 2/2 �Σ���1.0s �����ԣ�All connection attempts failed
+����ʧ�ܣ��� 2/2 �Σ���1.0s �����ԣ�All connection attempts failed
+[eval] 打分：比较向量数据库和传统关系型数据库的优缺点。
+[eval] 结束：比较向量数据库和传统关系型数据库的优缺点。 -> done
+[eval] 开始：RAG（检索增强生成）是什么？为什么它能减少大语言模型的幻觉？
+����ʧ�ܣ��� 1/2 �Σ���0.5s �����ԣ�Client error '403 Forbidden' for url 'https://zhuanlan.zhihu.com/p/675509396'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+����ʧ�ܣ��� 2/2 �Σ���1.0s �����ԣ�Client error '403 Forbidden' for url 'https://zhuanlan.zhihu.com/p/675509396'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+[eval] 打分：RAG（检索增强生成）是什么？为什么它能减少大语言模型的幻觉？
+[eval] 结束：RAG（检索增强生成）是什么？为什么它能减少大语言模型的幻觉？ -> done
+[eval] 开始：Transformer 的自注意力机制（self-attention）是如何工作的？
+[eval] 打分：Transformer 的自注意力机制（self-attention）是如何工作的？
+[eval] 结束：Transformer 的自注意力机制（self-attention）是如何工作的？ -> done
+[eval] 开始：2024 年大语言模型领域有哪些重要进展？
+����ʧ�ܣ��� 1/2 �Σ���0.5s �����ԣ�Client error '403 Forbidden' for url 'https://zhuanlan.zhihu.com/p/15818612090'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+����ʧ�ܣ��� 2/2 �Σ���1.0s �����ԣ�Client error '403 Forbidden' for url 'https://zhuanlan.zhihu.com/p/15818612090'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+����ʧ�ܣ��� 1/2 �Σ���0.5s �����ԣ�Client error '403 Forbidden' for url 'https://toloka.ai/blog/history-of-llms'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+����ʧ�ܣ��� 2/2 �Σ���1.0s �����ԣ�Client error '403 Forbidden' for url 'https://toloka.ai/blog/history-of-llms'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+[eval] 打分：2024 年大语言模型领域有哪些重要进展？
+[eval] 结束：2024 年大语言模型领域有哪些重要进展？ -> done
+[eval] 开始：什么是大语言模型（LLM）？
+[eval] 打分：什么是大语言模型（LLM）？
+[eval] 结束：什么是大语言模型（LLM）？ -> done
+[eval] 开始：向量检索中 HNSW 和 IVF 两种索引的原理和区别是什么？
+[eval] 打分：向量检索中 HNSW 和 IVF 两种索引的原理和区别是什么？
+[eval] 结束：向量检索中 HNSW 和 IVF 两种索引的原理和区别是什么？ -> done
+[eval] 开始：如何评估一个 RAG（检索增强生成）系统的效果？
+[eval] 打分：如何评估一个 RAG（检索增强生成）系统的效果？
+[eval] 结束：如何评估一个 RAG（检索增强生成）系统的效果？ -> done
+[eval] 开始：微调（fine-tuning）和 RAG 分别适合什么场景，如何选择？
+����ʧ�ܣ��� 1/2 �Σ���0.5s �����ԣ�All connection attempts failed
+����ʧ�ܣ��� 1/2 �Σ���0.5s �����ԣ�All connection attempts failed
+����ʧ�ܣ��� 2/2 �Σ���1.0s �����ԣ�All connection attempts failed
+����ʧ�ܣ��� 2/2 �Σ���1.0s �����ԣ�All connection attempts failed
+[eval] 打分：微调（fine-tuning）和 RAG 分别适合什么场景，如何选择？
+[eval] 结束：微调（fine-tuning）和 RAG 分别适合什么场景，如何选择？ -> done
+[eval] 开始：多智能体（multi-agent）系统相比单智能体有哪些优势和挑战？
+����ʧ�ܣ��� 1/2 �Σ���0.5s �����ԣ�All connection attempts failed
+����ʧ�ܣ��� 2/2 �Σ���1.0s �����ԣ�All connection attempts failed
+[eval] 打分：多智能体（multi-agent）系统相比单智能体有哪些优势和挑战？
+[eval] 结束：多智能体（multi-agent）系统相比单智能体有哪些优势和挑战？ -> done
+
+======================================================================
+评测汇总
+======================================================================
+[q1] (simple) 什么是向量数据库？
+      相关=5  准确=5  引用=None  完整=5  结构=5  编造=0  耗时=2.6s
+[q2] (research) 比较向量数据库和传统关系型数据库的优缺点。
+      相关=5  准确=5  引用=5  完整=5  结构=5  编造=0  耗时=115.2s
+[q3] (research) RAG（检索增强生成）是什么？为什么它能减少大语言模型的幻觉？
+      相关=5  准确=5  引用=5  完整=5  结构=5  编造=0  耗时=56.4s
+[q4] (research) Transformer 的自注意力机制（self-attention）是如何工作的？
+      相关=5  准确=5  引用=None  完整=5  结构=5  编造=0  耗时=2.2s
+[q5] (research_time) 2024 年大语言模型领域有哪些重要进展？
+      相关=5  准确=4  引用=4  完整=5  结构=5  编造=0  耗时=91.0s
+[q6] (simple) 什么是大语言模型（LLM）？
+      相关=5  准确=5  引用=None  完整=5  结构=4  编造=0  耗时=2.1s
+[q7] (research) 向量检索中 HNSW 和 IVF 两种索引的原理和区别是什么？
+      相关=5  准确=5  引用=5  完整=5  结构=5  编造=0  耗时=66.6s
+[q8] (research) 如何评估一个 RAG（检索增强生成）系统的效果？
+      相关=5  准确=5  引用=5  完整=5  结构=5  编造=0  耗时=63.3s
+[q9] (research) 微调（fine-tuning）和 RAG 分别适合什么场景，如何选择？
+      相关=5  准确=5  引用=5  完整=5  结构=5  编造=0  耗时=116.2s
+[q10] (research) 多智能体（multi-agent）系统相比单智能体有哪些优势和挑战？
+      相关=5  准确=4  引用=4  完整=5  结构=5  编造=0  耗时=111.6s
+
+各维度平均分（仅统计已打分的项）：
+  relevance    5.00  (n=10)
+  accuracy     4.80  (n=10)
+  citation     4.71  (n=7)
+  completeness 5.00  (n=10)
+  structure    4.90  (n=10)
+  编造引用总数        0
+
+结果已保存：D:\GitHub代码\DeepSearch\backend\eval\results\20261112_161908.json
